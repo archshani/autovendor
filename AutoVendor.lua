@@ -24,7 +24,6 @@ local defaults = {
     trash = {
         enabled = false,
         items = {},
-        bags = {[0]=true, [1]=true, [2]=true, [3]=true, [4]=true},
         stats = {
             total = 0,
             itemCounts = {}
@@ -51,7 +50,7 @@ local function InitializeSettings()
         end
     end
 
-    -- Ensure nested stats are initialized
+    -- Ensure nested tables are initialized
     if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
     for k, v in pairs(defaults.stats) do
         if AutoVendorSettings.stats[k] == nil then
@@ -70,13 +69,6 @@ local function InitializeSettings()
             else
                 AutoVendorSettings.trash[k] = v
             end
-        end
-    end
-    -- Specifically ensure trash.bags has keys 0-4
-    if not AutoVendorSettings.trash.bags then AutoVendorSettings.trash.bags = {} end
-    for i=0, 4 do
-        if AutoVendorSettings.trash.bags[i] == nil then
-            AutoVendorSettings.trash.bags[i] = true
         end
     end
 end
@@ -109,13 +101,14 @@ local FormatMoney = AutoVendor.FormatMoney
 
 -- 3. Unified Process Queue
 local processQueue = {}
-local inQueue = {} -- to prevent double queuing
+local inQueue = {} -- [bag][slot] = action
 local itemsSoldCount = 0
 local totalProfit = 0
 local itemsTrashedCount = 0
 local processTimer = 0
 
 local function ClearInQueue()
+    inQueue = {}
     for b=0, 4 do
         inQueue[b] = {}
     end
@@ -143,11 +136,12 @@ local function OnUpdate(self, elapsed)
 
     while processTimer >= interval and #processQueue > 0 do
         local item = processQueue[1]
+        -- In 3.3.5a GetContainerItemInfo returns 7 values:
+        -- icon, itemCount, locked, quality, readable, lootable, itemLink
         local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
 
         if locked then
-            -- If the top item is locked, we can't process it yet.
-            -- We stop the loop but don't reset processTimer so we try again next frame.
+            -- Item is busy, stop processing for this frame
             break
         end
 
@@ -155,20 +149,15 @@ local function OnUpdate(self, elapsed)
         if inQueue[item.bag] then inQueue[item.bag][item.slot] = nil end
         processTimer = processTimer - interval
 
-        local itemID
-        if GetContainerItemID then
-            itemID = GetContainerItemID(item.bag, item.slot)
-        else
-            local link = GetContainerItemLink(item.bag, item.slot)
-            itemID = GetIDFromLink(link)
-        end
+        local link = GetContainerItemLink(item.bag, item.slot)
+        local itemID = GetIDFromLink(link)
 
         if itemID then
             if not count or count == 0 then count = 1 end
 
             if item.action == "sell" then
                 if not isMerchantOpen then break end
-                local _, link = GetItemInfo(itemID)
+
                 local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(itemID)
                 local isException = (AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID])
 
@@ -215,18 +204,11 @@ end
 function AutoVendor.ScanBags(action)
     local queued = false
     for bag = 0, 4 do
-        -- Only trashing is restricted by bag settings if we keep them,
-        -- but user said "remove bags tab as we'll have all enabled by default"
-        -- So for trash we scan all bags 0-4.
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
-            if not inQueue[bag][slot] then
-                local itemID
-                if GetContainerItemID then
-                    itemID = GetContainerItemID(bag, slot)
-                else
-                    itemID = GetIDFromLink(GetContainerItemLink(bag, slot))
-                end
+            if not (inQueue[bag] and inQueue[bag][slot]) then
+                local link = GetContainerItemLink(bag, slot)
+                local itemID = GetIDFromLink(link)
 
                 if itemID then
                     local _, _, locked = GetContainerItemInfo(bag, slot)
@@ -251,7 +233,8 @@ function AutoVendor.ScanBags(action)
 
                     if shouldAdd and not locked then
                         table.insert(processQueue, {bag = bag, slot = slot, action = action})
-                        inQueue[bag][slot] = true
+                        if not inQueue[bag] then inQueue[bag] = {} end
+                        inQueue[bag][slot] = action
                         queued = true
                     end
                 end
@@ -267,49 +250,50 @@ local ScanBags = AutoVendor.ScanBags
 
 -- 4. Slash Commands & Import
 local function ImportMondDelete()
-    local db = MondDeleteDB or _G["MondDeleteDB"]
+    -- Check global namespace for MondDeleteDB
+    local db = _G["MondDeleteDB"]
     if not db then
-        print("|cffff0000AutoVendor:|r MondDeleteDB not found in global namespace.")
+        print("|cffff0000AutoVendor:|r MondDeleteDB not found in global scope. (Is MondDelete enabled?)")
         return
     end
 
-    print("|cff00ff00AutoVendor:|r Starting import from MondDeleteDB...")
+    print("|cff00ff00AutoVendor:|r MondDeleteDB found. Importing whitelist...")
     local count = 0
+    local target = AutoVendorSettings.trash.items
 
-    -- Check the legacy/top-level items first
+    -- 1. Check top-level items table
     if db.items then
-        for itemID, _ in pairs(db.items) do
-             local id = tonumber(itemID) or itemID
-             if not AutoVendorSettings.trash.items[id] then
-                 AutoVendorSettings.trash.items[id] = true
-                 count = count + 1
-             end
+        for itemID, val in pairs(db.items) do
+            if val == true then
+                local id = tonumber(itemID) or itemID
+                if id and not target[id] then
+                    target[id] = true
+                    count = count + 1
+                end
+            end
         end
-        print("|cff00ff00AutoVendor:|r Checked legacy items list...")
     end
 
-    -- Check profiles if they exist
+    -- 2. Check items within profiles
     if db.profiles then
         for pName, profile in pairs(db.profiles) do
             if profile.items then
-                for itemID, _ in pairs(profile.items) do
-                    local id = tonumber(itemID) or itemID
-                    if not AutoVendorSettings.trash.items[id] then
-                        AutoVendorSettings.trash.items[id] = true
-                        count = count + 1
+                for itemID, val in pairs(profile.items) do
+                    if val == true then
+                        local id = tonumber(itemID) or itemID
+                        if id and not target[id] then
+                            target[id] = true
+                            count = count + 1
+                        end
                     end
                 end
             end
         end
-        print("|cff00ff00AutoVendor:|r Checked all profiles...")
     end
 
-    print("|cff00ff00AutoVendor:|r Imported " .. count .. " new items from MondDelete.")
-    if count > 0 then
-        -- Refresh UI if open
-        if AutoVendorUI and AutoVendorUI.pages.trash[1] and AutoVendorUI.pages.trash[1]:IsShown() then
-             AutoVendorUI:SetTab("trash", 1)
-        end
+    print("|cff00ff00AutoVendor:|r Successfully imported " .. count .. " items from MondDelete.")
+    if count > 0 and AutoVendorUI and AutoVendorUI.RefreshTrashItems then
+        AutoVendorUI:RefreshTrashItems()
     end
 end
 
@@ -376,28 +360,31 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         print("    |cff1eff00Uncommon (Green):|r " .. (stats.count2 or 0))
         print("    |cff0070ddRare (Blue):|r " .. (stats.count3 or 0))
     else
-        print("|cffffff00AutoVendor usage:|r")
-        print("  /autovendor - Open Integrated UI")
-        print("  /autotrash - Open Integrated UI (AutoTrash section)")
-        print("  /autovendor [greys|whites|greens|blues] - Toggle selling")
-        print("  /autovendor add [itemlink] - Ignore item from selling")
-        print("  /autovendor list - Show ignored items")
-        print("  /autovendor sellrate [1-1000] - Items per second")
-        print("  /autovendor stats - Show statistics")
-        print("  /autovendor import - Import MondDelete list")
+        -- If UI is available, no args should open it.
+        if AutoVendorUI then
+            AutoVendorUI.frame:Show()
+            AutoVendorUI:UpdateSection("vendor")
+        else
+            print("|cffffff00AutoVendor usage:|r")
+            print("  /autovendor - Open Integrated UI")
+            print("  /autovendor [greys|whites|greens|blues] - Toggle selling")
+            print("  /autovendor add [itemlink] - Ignore item from selling")
+            print("  /autovendor list - Show ignored items")
+            print("  /autovendor sellrate [1-1000] - Items per second")
+            print("  /autovendor stats - Show statistics")
+            print("  /autovendor import - Import MondDelete list")
+        end
     end
 end
 
 SLASH_AUTOTRASH1 = "/autotrash"
 SLASH_AUTOTRASH2 = "/at"
 SlashCmdList["AUTOTRASH"] = function(msg)
-    if not msg or msg == "" then
-        if AutoVendorUI then
-             AutoVendorUI:UpdateSection("trash")
-             AutoVendorUI.frame:Show()
-        end
+    if AutoVendorUI then
+         AutoVendorUI:UpdateSection("trash")
+         AutoVendorUI.frame:Show()
     else
-        print("|cff00ff00AutoTrash:|r Use /autovendor import to import MondDelete list.")
+        print("|cff00ff00AutoTrash:|r Whitelist logic active. Use Integrated UI to manage.")
     end
 end
 
@@ -435,6 +422,13 @@ local function AddToTrash(itemID, link)
     if not AutoVendorSettings.trash.items[itemID] then
         AutoVendorSettings.trash.items[itemID] = true
         print("|cff00ff00AutoTrash:|r Added to delete list: " .. (link or itemID))
+        if AutoVendorUI and AutoVendorUI.RefreshTrashItems then
+            AutoVendorUI:RefreshTrashItems()
+        end
+        -- Trigger immediate scan if enabled
+        if AutoVendorSettings.trash.enabled then
+            ScanBags("trash")
+        end
     end
 end
 
@@ -443,14 +437,9 @@ function ContainerFrameItemButton_OnModifiedClick(self, button)
     if button == "RightButton" and IsAltKeyDown() then
         local bag = self:GetParent():GetID()
         local slot = self:GetID()
-        local itemID
-        if GetContainerItemID then
-            itemID = GetContainerItemID(bag, slot)
-        else
-            itemID = GetIDFromLink(GetContainerItemLink(bag, slot))
-        end
+        local link = GetContainerItemLink(bag, slot)
+        local itemID = GetIDFromLink(link)
         if itemID then
-            local link = GetContainerItemLink(bag, slot)
             AddToTrash(itemID, link)
         end
         return

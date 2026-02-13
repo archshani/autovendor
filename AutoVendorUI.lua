@@ -8,11 +8,6 @@ AutoVendorUI = {
     frame = nil
 }
 
-local function L(key, fallback)
-    -- Simplified localization for now
-    return fallback
-end
-
 -- 1. Main Frame
 local f = CreateFrame("Frame", "AutoVendorMainFrame", UIParent)
 f:SetSize(400, 430)
@@ -150,17 +145,25 @@ end
 CreateTabButtons()
 
 -------------------------------------------------
--- PORTED TRASH TABS
+-- TRASH TABS
 -------------------------------------------------
 
 -- ITEMS (Trash Whitelist)
 local function Items_Refresh(p)
+    if not p or not p.content then return end
+
     local list = {}
-    for itemID, _ in pairs(AutoVendorSettings.trash.items) do
-        local name, link, quality, _, _, _, _, _, _, icon = GetItemInfo(itemID)
-        table.insert(list, {id=itemID, name=name, link=link, quality=quality, icon=icon})
+    if AutoVendorSettings and AutoVendorSettings.trash and AutoVendorSettings.trash.items then
+        for itemID, val in pairs(AutoVendorSettings.trash.items) do
+            if val == true then
+                local name, link, quality, _, _, _, _, _, _, icon = GetItemInfo(itemID)
+                table.insert(list, {id=itemID, name=name, link=link, quality=quality, icon=icon})
+            end
+        end
     end
     table.sort(list, function(a,b) return (a.name or "") < (b.name or "") end)
+
+    if not p.rows then p.rows = {} end
 
     for i=1, #list do
         local d = list[i]
@@ -178,8 +181,11 @@ local function Items_Refresh(p)
             r.del:SetPoint("RIGHT", 0, 0)
             r.del:SetScale(0.6)
             r.del:SetScript("OnClick", function(self)
-                AutoVendorSettings.trash.items[self:GetParent().itemID] = nil
-                Items_Refresh(p)
+                local parent = self:GetParent()
+                if parent and parent.itemID then
+                    AutoVendorSettings.trash.items[parent.itemID] = nil
+                    Items_Refresh(p)
+                end
             end)
             p.rows[i] = r
         end
@@ -189,7 +195,14 @@ local function Items_Refresh(p)
         r:Show()
     end
     for i=#list+1, #p.rows do p.rows[i]:Hide() end
-    p.content:SetHeight(#list * 32)
+    p.content:SetHeight(math.max(1, #list * 32))
+end
+
+function AutoVendorUI:RefreshTrashItems()
+    local p = self.pages.trash[1]
+    if p then
+        Items_Refresh(p)
+    end
 end
 
 AutoVendorUI:RegisterTab("trash", 1, "Items",
@@ -254,7 +267,17 @@ function(p)
     importBtn:SetText("Import MondDelete")
     importBtn:SetScript("OnClick", function()
         if SlashCmdList["AUTOVENDOR"] then SlashCmdList["AUTOVENDOR"]("import") end
-        AutoVendorUI:SetTab("trash", 1) -- Switch to items (new index 1)
+        AutoVendorUI:SetTab("trash", 1)
+    end)
+
+    local clearBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    clearBtn:SetSize(160, 25)
+    clearBtn:SetPoint("TOPLEFT", 10, -80)
+    clearBtn:SetText("Clear Whitelist")
+    clearBtn:SetScript("OnClick", function()
+        AutoVendorSettings.trash.items = {}
+        print("|cff00ff00AutoTrash:|r Whitelist cleared.")
+        AutoVendorUI:RefreshTrashItems()
     end)
 end,
 function(p)
@@ -317,12 +340,20 @@ end)
 
 -- EXCEPTIONS (Vendor)
 local function Exceptions_Refresh(p)
+    if not p or not p.content then return end
+
     local list = {}
-    for itemID, _ in pairs(AutoVendorSettings.exceptions) do
-        local name, link, quality, _, _, _, _, _, _, icon = GetItemInfo(itemID)
-        table.insert(list, {id=itemID, name=name, link=link, quality=quality, icon=icon})
+    if AutoVendorSettings and AutoVendorSettings.exceptions then
+        for itemID, val in pairs(AutoVendorSettings.exceptions) do
+            if val == true then
+                local name, link, quality, _, _, _, _, _, _, icon = GetItemInfo(itemID)
+                table.insert(list, {id=itemID, name=name, link=link, quality=quality, icon=icon})
+            end
+        end
     end
     table.sort(list, function(a,b) return (a.name or "") < (b.name or "") end)
+
+    if not p.rows then p.rows = {} end
 
     for i=1, #list do
         local d = list[i]
@@ -340,8 +371,11 @@ local function Exceptions_Refresh(p)
             r.del:SetPoint("RIGHT", 0, 0)
             r.del:SetScale(0.6)
             r.del:SetScript("OnClick", function(self)
-                AutoVendorSettings.exceptions[self:GetParent().itemID] = nil
-                Exceptions_Refresh(p)
+                local parent = self:GetParent()
+                if parent and parent.itemID then
+                    AutoVendorSettings.exceptions[parent.itemID] = nil
+                    Exceptions_Refresh(p)
+                end
             end)
             p.rows[i] = r
         end
@@ -351,7 +385,7 @@ local function Exceptions_Refresh(p)
         r:Show()
     end
     for i=#list+1, #p.rows do p.rows[i]:Hide() end
-    p.content:SetHeight(#list * 32)
+    p.content:SetHeight(math.max(1, #list * 32))
 end
 
 AutoVendorUI:RegisterTab("vendor", 2, "Exceptions",
