@@ -4,6 +4,7 @@
 ## Author: User
 ## Version: 1.0
 ## SavedVariables: AutoVendorSettings
+## OptionalDeps: MondDelete
 
 AutoVendor.lua
 AutoVendorUI.lua

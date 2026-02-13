@@ -133,12 +133,12 @@ local function CreateTabButtons()
 
     -- Trash Tabs
     i = 1
-    local tTabs = {1, 2, 3, 4}
-    local tNames = {[1]="Bags", [2]="Items", [3]="Stats", [4]="Settings"}
+    local tTabs = {1, 2, 3} -- Bags removed
+    local tNames = {[1]="Items", [2]="Stats", [3]="Settings"}
     for _, id in ipairs(tTabs) do
         local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-        b:SetSize(70, 24)
-        b:SetPoint("TOPLEFT", 15 + (i-1)*75, -85)
+        b:SetSize(80, 24)
+        b:SetPoint("TOPLEFT", 15 + (i-1)*85, -85)
         b:SetText(tNames[id])
         b:SetScript("OnClick", function() AutoVendorUI:SetTab("trash", id) end)
         tabButtons.trash[id] = b
@@ -153,58 +153,7 @@ CreateTabButtons()
 -- PORTED TRASH TABS
 -------------------------------------------------
 
--- BAGS (Trash)
-AutoVendorUI:RegisterTab("trash", 1, "Bags",
-function(p)
-    p.rows = {}
-    local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOPLEFT", 10, -5)
-    title:SetText("|cff00ff00Select bags to scan for trashing:|r")
-
-    for bag = 0, 4 do
-        local r = CreateFrame("Frame", nil, p)
-        r:SetSize(300, 36)
-        r:SetPoint("TOPLEFT", 10, -25 - bag * 38)
-        r.icon = r:CreateTexture(nil, "OVERLAY")
-        r.icon:SetSize(32, 32)
-        r.icon:SetPoint("LEFT", 0, 0)
-        r.text = r:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        r.text:SetPoint("LEFT", r.icon, "RIGHT", 8, 0)
-        r.cb = CreateFrame("CheckButton", nil, r, "UICheckButtonTemplate")
-        r.cb:SetPoint("RIGHT", 0, 0)
-        r.cb:SetScript("OnClick", function(self)
-            AutoVendorSettings.trash.bags[bag] = self:GetChecked()
-        end)
-        p.rows[bag] = r
-    end
-end,
-function(p)
-    for bag = 0, 4 do
-        local r = p.rows[bag]
-        local icon, text
-        if bag == 0 then
-            icon = "Interface\\Icons\\INV_Misc_Bag_08"
-            text = "Backpack"
-        else
-            local invID = ContainerIDToInventoryID(bag)
-            local itemID = GetInventoryItemID("player", invID)
-            if itemID then
-                icon = GetItemIcon(itemID)
-                text = GetItemInfo(itemID) or ("Bag " .. bag)
-            else
-                icon = "Interface\\Icons\\INV_Misc_Bag_08"
-                text = "Empty Slot"
-            end
-        end
-        r.icon:SetTexture(icon)
-        r.text:SetText(text)
-        r.cb:SetChecked(AutoVendorSettings.trash.bags[bag])
-    end
-end)
-
-
 -- ITEMS (Trash Whitelist)
--- Simplified port of Items.lua from MondDelete
 local function Items_Refresh(p)
     local list = {}
     for itemID, _ in pairs(AutoVendorSettings.trash.items) do
@@ -243,7 +192,7 @@ local function Items_Refresh(p)
     p.content:SetHeight(#list * 32)
 end
 
-AutoVendorUI:RegisterTab("trash", 2, "Items",
+AutoVendorUI:RegisterTab("trash", 1, "Items",
 function(p)
     p.rows = {}
     local desc = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -262,7 +211,7 @@ function(p)
 end)
 
 -- STATS (Trash)
-AutoVendorUI:RegisterTab("trash", 3, "Stats",
+AutoVendorUI:RegisterTab("trash", 2, "Stats",
 function(p)
     p.text = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     p.text:SetPoint("TOPLEFT", 10, -10)
@@ -282,7 +231,7 @@ function(p)
 end)
 
 -- SETTINGS (Trash)
-AutoVendorUI:RegisterTab("trash", 4, "Settings",
+AutoVendorUI:RegisterTab("trash", 3, "Settings",
 function(p)
     local cb = CreateFrame("CheckButton", "AutoTrashEnabledCB", p, "UICheckButtonTemplate")
     cb:SetPoint("TOPLEFT", 10, -10)
@@ -291,6 +240,11 @@ function(p)
     cb.text:SetText("Enable AutoTrash")
     cb:SetScript("OnClick", function(self)
         AutoVendorSettings.trash.enabled = self:GetChecked()
+        if AutoVendorSettings.trash.enabled then
+            if AutoVendor and AutoVendor.ScanBags then
+                AutoVendor.ScanBags("trash")
+            end
+        end
     end)
     p.cb = cb
 
@@ -300,7 +254,7 @@ function(p)
     importBtn:SetText("Import MondDelete")
     importBtn:SetScript("OnClick", function()
         if SlashCmdList["AUTOVENDOR"] then SlashCmdList["AUTOVENDOR"]("import") end
-        AutoVendorUI:SetTab("trash", 2) -- Switch to items to see imported
+        AutoVendorUI:SetTab("trash", 1) -- Switch to items (new index 1)
     end)
 end,
 function(p)
@@ -452,15 +406,5 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         SlashCmdList["AUTOVENDOR_UI"]()
     else
         old_SlashAV(msg)
-    end
-end
-
-local old_SlashAT = SlashCmdList["AUTOTRASH"]
-SlashCmdList["AUTOTRASH"] = function(msg)
-    if not msg or msg == "" then
-        AutoVendorUI:UpdateSection("trash")
-        AutoVendorUI.frame:Show()
-    else
-        old_SlashAT(msg)
     end
 end
