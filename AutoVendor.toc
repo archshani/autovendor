@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: AutoVendor
+## Notes: Automatically sells grey, green, blue, and white items.
+## Author: User
+## Version: 1.0
+## SavedVariables: AutoVendorSettings
+
+AutoVendor.lua
