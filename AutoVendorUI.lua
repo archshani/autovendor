@@ -17,6 +17,14 @@ local function FormatMoney(amount)
     return string.format("%dg %ds %dc", gold, silver, copper)
 end
 
+local function FormatMoneyGPH(amount)
+    if not amount or amount == 0 then return "0g 00s 00c" end
+    local gold = math.floor(amount / 10000)
+    local silver = math.floor((amount % 10000) / 100)
+    local copper = amount % 100
+    return string.format("%dg %02ds %02dc", gold, silver, copper)
+end
+
 -------------------------------------------------
 -- MAIN FRAME
 -------------------------------------------------
@@ -274,7 +282,7 @@ end)
 -- GPH OVERLAY
 -------------------------------------------------
 local gph = CreateFrame("Frame", "AutoVendorGPHFrame", UIParent)
-gph:SetSize(200, 130)
+gph:SetSize(260, 130)
 gph:SetPoint("CENTER")
 gph:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -295,14 +303,32 @@ local gphTitle = gph:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 gphTitle:SetPoint("TOP", 0, -10)
 gphTitle:SetText("GPH Tracker")
 
-local timeText = gph:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-timeText:SetPoint("TOP", gphTitle, "BOTTOM", 0, -5)
+-- Time
+local timeLabel = gph:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+timeLabel:SetPoint("TOPLEFT", 15, -35)
+timeLabel:SetText("Time Elapsed:")
 
-local goldText = gph:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-goldText:SetPoint("TOP", timeText, "BOTTOM", 0, -5)
+local timeValue = gph:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+timeValue:SetPoint("TOPRIGHT", -15, -35)
+timeValue:SetJustifyH("RIGHT")
 
-local gphText = gph:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-gphText:SetPoint("TOP", goldText, "BOTTOM", 0, -5)
+-- Gold
+local goldLabel = gph:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+goldLabel:SetPoint("TOPLEFT", 15, -55)
+goldLabel:SetText("Gold Earned:")
+
+local goldValue = gph:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+goldValue:SetPoint("TOPRIGHT", -15, -55)
+goldValue:SetJustifyH("RIGHT")
+
+-- GPH
+local gphLabel = gph:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+gphLabel:SetPoint("TOPLEFT", 15, -75)
+gphLabel:SetText("Gold Per Hour:")
+
+local gphValue = gph:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+gphValue:SetPoint("TOPRIGHT", -15, -75)
+gphValue:SetJustifyH("RIGHT")
 
 local function UpdateGPHDisplay()
     local data = AutoVendorGPH
@@ -310,28 +336,30 @@ local function UpdateGPHDisplay()
     local h = math.floor(elapsed / 3600)
     local m = math.floor((elapsed % 3600) / 60)
     local s = elapsed % 60
-    timeText:SetText(string.format("Time: %02d:%02d:%02d", h, m, s))
-    goldText:SetText("Gold: " .. FormatMoney(data.goldGained))
+    timeValue:SetText(string.format("%02d:%02d:%02d", h, m, s))
+    goldValue:SetText(FormatMoneyGPH(data.goldGained))
 
     local gphVal = 0
     if elapsed > 0 then
         gphVal = (data.goldGained / elapsed) * 3600
     end
-    gphText:SetText("GPH: " .. FormatMoney(gphVal))
+    gphValue:SetText(FormatMoneyGPH(gphVal))
 end
 
 local btnStart = CreateFrame("Button", nil, gph, "UIPanelButtonTemplate")
-btnStart:SetSize(60, 20)
-btnStart:SetPoint("BOTTOMLEFT", 10, 10)
+btnStart:SetSize(65, 20)
+-- Centering buttons: total width = 65*3 + 5*2 = 195 + 10 = 205.
+-- Offset = (260 - 205) / 2 = 27.5
+btnStart:SetPoint("BOTTOMLEFT", 28, 15)
 btnStart:SetText("Start")
 
 local btnPause = CreateFrame("Button", nil, gph, "UIPanelButtonTemplate")
-btnPause:SetSize(60, 20)
+btnPause:SetSize(65, 20)
 btnPause:SetPoint("LEFT", btnStart, "RIGHT", 5, 0)
 btnPause:SetText("Pause")
 
 local btnStop = CreateFrame("Button", nil, gph, "UIPanelButtonTemplate")
-btnStop:SetSize(60, 20)
+btnStop:SetSize(65, 20)
 btnStop:SetPoint("LEFT", btnPause, "RIGHT", 5, 0)
 btnStop:SetText("Stop")
 
