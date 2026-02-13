@@ -17,13 +17,35 @@ local defaults = {
     sellGreens = true,
     sellBlues = true,
     sellRate = 33,
-    exceptions = {}
+    exceptions = {},
+    stats = {
+        totalGold = 0,
+        count0 = 0, -- Poor
+        count1 = 0, -- Common
+        count2 = 0, -- Uncommon
+        count3 = 0  -- Rare
+    }
 }
 
 -- Load defaults if missing
 for k, v in pairs(defaults) do
     if AutoVendorSettings[k] == nil then
-        AutoVendorSettings[k] = v
+        if type(v) == "table" then
+            AutoVendorSettings[k] = {}
+            for k2, v2 in pairs(v) do
+                AutoVendorSettings[k][k2] = v2
+            end
+        else
+            AutoVendorSettings[k] = v
+        end
+    end
+end
+
+-- Ensure nested stats are initialized
+if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
+for k, v in pairs(defaults.stats) do
+    if AutoVendorSettings.stats[k] == nil then
+        AutoVendorSettings.stats[k] = v
     end
 end
 
@@ -95,6 +117,15 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
             print("|cffff0000Error:|r Rate must be a number between 1 and 100.")
         end
 
+    elseif cmd == "stats" then
+        print("|cff00ff00AutoVendor Lifetime Statistics:|r")
+        print("  Total Gold Earned: " .. GetCoinText(AutoVendorSettings.stats.totalGold))
+        print("  Items Sold by Rarity:")
+        print("    |cff9d9d9dPoor (Grey):|r " .. AutoVendorSettings.stats.count0)
+        print("    |cffffffffCommon (White):|r " .. AutoVendorSettings.stats.count1)
+        print("    |cff1eff00Uncommon (Green):|r " .. AutoVendorSettings.stats.count2)
+        print("    |cff0070ddRare (Blue):|r " .. AutoVendorSettings.stats.count3)
+
     else
         print("|cffffff00AutoVendor usage:|r")
         print("  /autovendor [greys|whites|greens|blues] - Toggle selling")
@@ -102,6 +133,7 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         print("  /autovendor remove [itemlink] - Unignore item")
         print("  /autovendor list - Show ignored items")
         print("  /autovendor sellrate [1-100] - Items sold per second (Default: 33)")
+        print("  /autovendor stats - Show lifetime statistics")
     end
 end
 
@@ -154,8 +186,17 @@ local function OnUpdate(self, elapsed)
 
                 if shouldSell and price and price > 0 then
                     UseContainerItem(item.bag, item.slot)
-                    itemsSoldCount = itemsSoldCount + 1
-                    totalProfit = totalProfit + (price * count)
+                    
+                    local itemProfit = (price * count)
+                    itemsSoldCount = itemsSoldCount + count
+                    totalProfit = totalProfit + itemProfit
+
+                    -- Update lifetime stats
+                    AutoVendorSettings.stats.totalGold = AutoVendorSettings.stats.totalGold + itemProfit
+                    if quality >= 0 and quality <= 3 then
+                        local countKey = "count" .. quality
+                        AutoVendorSettings.stats[countKey] = AutoVendorSettings.stats[countKey] + count
+                    end
                 end
             end
         end
