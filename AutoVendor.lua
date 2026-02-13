@@ -7,10 +7,6 @@ local frame = CreateFrame("Frame")
 print("|cff00ff00AutoVendor (WotLK) Loaded Successfully.|r")
 
 -- 2. Settings Initialization
-if type(AutoVendorSettings) ~= "table" then
-    AutoVendorSettings = {}
-end
-
 local defaults = {
     sellGreys = true,
     sellWhites = false,
@@ -27,27 +23,36 @@ local defaults = {
     }
 }
 
--- Load defaults if missing
-for k, v in pairs(defaults) do
-    if AutoVendorSettings[k] == nil then
-        if type(v) == "table" then
-            AutoVendorSettings[k] = {}
-            for k2, v2 in pairs(v) do
-                AutoVendorSettings[k][k2] = v2
+local function InitializeSettings()
+    if type(AutoVendorSettings) ~= "table" then
+        AutoVendorSettings = {}
+    end
+
+    -- Load defaults if missing
+    for k, v in pairs(defaults) do
+        if AutoVendorSettings[k] == nil then
+            if type(v) == "table" then
+                AutoVendorSettings[k] = {}
+                for k2, v2 in pairs(v) do
+                    AutoVendorSettings[k][k2] = v2
+                end
+            else
+                AutoVendorSettings[k] = v
             end
-        else
-            AutoVendorSettings[k] = v
+        end
+    end
+
+    -- Ensure nested stats are initialized
+    if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
+    for k, v in pairs(defaults.stats) do
+        if AutoVendorSettings.stats[k] == nil then
+            AutoVendorSettings.stats[k] = v
         end
     end
 end
 
--- Ensure nested stats are initialized
-if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
-for k, v in pairs(defaults.stats) do
-    if AutoVendorSettings.stats[k] == nil then
-        AutoVendorSettings.stats[k] = v
-    end
-end
+-- Initial call in case variables are already loaded (e.g. on /reload)
+InitializeSettings()
 
 -- 3. Helper: Get Item ID from Link
 -- 3. Helpers
@@ -170,61 +175,76 @@ local function OnUpdate(self, elapsed)
         return
     end
 
-    local interval = 1 / AutoVendorSettings.sellRate
+    local rate = AutoVendorSettings.sellRate or 33
+    local interval = 1 / rate
     sellTimer = sellTimer + elapsed
+
     if sellTimer >= interval then
+        local item = sellQueue[1] -- Peek at the first item
+        if not item then
+            table.remove(sellQueue, 1)
+            return
+        end
+
+        local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
+        if locked then
+            -- Item is locked, wait for next OnUpdate tick to try again
+            -- We don't reset sellTimer to 0, so we check again next frame
+            return
+        end
+
+        -- Safe to process, so remove from queue and reset timer
+        table.remove(sellQueue, 1)
         sellTimer = 0
-        local item = table.remove(sellQueue, 1)
-        if item then
-            -- 1. Check if the slot is locked (already being processed)
-            local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
-            if locked then return end
 
-            -- 2. Verify it's still the same item or should still be sold
-            local link = GetContainerItemLink(item.bag, item.slot)
-            if link then
-                local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
-                local itemID = GetIDFromLink(link)
+        local link = GetContainerItemLink(item.bag, item.slot)
+        if link then
+            local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
+            local itemID = GetIDFromLink(link)
 
-                if not count or count == 0 then count = 1 end
+            if not count or count == 0 then count = 1 end
 
-                local isException = false
-                if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
-                    isException = true
+            local isException = false
+            if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
+                isException = true
+            end
+
+            local shouldSell = false
+            if not isException then
+                if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
+                elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
+                elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
+                elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
                 end
+            end
 
-                local shouldSell = false
-                if not isException then
-                    if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
-                    elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
-                    elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
-                    elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
-                    end
-                end
+            if shouldSell and price and price > 0 then
+                UseContainerItem(item.bag, item.slot)
 
-                if shouldSell and price and price > 0 then
-                    UseContainerItem(item.bag, item.slot)
+                local itemProfit = (price * count)
+                itemsSoldCount = itemsSoldCount + count
+                totalProfit = totalProfit + itemProfit
 
-                    local itemProfit = (price * count)
-                    itemsSoldCount = itemsSoldCount + count
-                    totalProfit = totalProfit + itemProfit
-
-                    -- Update lifetime stats
-                    AutoVendorSettings.stats.totalGold = AutoVendorSettings.stats.totalGold + itemProfit
-                    if quality >= 0 and quality <= 3 then
-                        local countKey = "count" .. quality
-                        AutoVendorSettings.stats[countKey] = AutoVendorSettings.stats[countKey] + count
-                    end
+                -- Update lifetime stats
+                if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
+                local s = AutoVendorSettings.stats
+                s.totalGold = (s.totalGold or 0) + itemProfit
+                if quality and quality >= 0 and quality <= 3 then
+                    local countKey = "count" .. quality
+                    s[countKey] = (s[countKey] or 0) + count
                 end
             end
         end
     end
 end
 
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
-frame:SetScript("OnEvent", function(self, event)
-    if event == "MERCHANT_SHOW" then
+frame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" and arg1 == "AutoVendor" then
+        InitializeSettings()
+    elseif event == "MERCHANT_SHOW" then
         -- Don't start a new scan if we are already processing a queue
         if #sellQueue > 0 then return end
 
