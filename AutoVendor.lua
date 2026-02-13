@@ -1,17 +1,17 @@
--- AUTOVENDOR FOR WOTLK 3.3.5a
--- This version uses the classic API functions.
+-- AUTOVENDOR & AUTOTRASH FOR WOTLK 3.3.5a
+-- Integrated version with rate-limiting and unified logic.
 
 local frame = CreateFrame("Frame")
+local isMerchantOpen = false
 
--- 1. Startup Message (If you see this, the addon is loaded!)
-print("|cff00ff00AutoVendor (WotLK) Loaded Successfully.|r")
+AutoVendor = {}
 
--- 2. Settings Initialization
+-- 1. Settings Initialization
 local defaults = {
     sellGreys = true,
     sellWhites = false,
-    sellGreens = true,
-    sellBlues = true,
+    sellGreens = false,
+    sellBlues = false,
     sellRate = 33,
     exceptions = {},
     stats = {
@@ -20,6 +20,15 @@ local defaults = {
         count1 = 0, -- Common
         count2 = 0, -- Uncommon
         count3 = 0  -- Rare
+    },
+    trash = {
+        enabled = false,
+        items = {},
+        bags = {[0]=true, [1]=true, [2]=true, [3]=true, [4]=true},
+        stats = {
+            total = 0,
+            itemCounts = {}
+        }
     }
 }
 
@@ -49,78 +58,268 @@ local function InitializeSettings()
             AutoVendorSettings.stats[k] = v
         end
     end
+
+    if not AutoVendorSettings.trash then AutoVendorSettings.trash = {} end
+    for k, v in pairs(defaults.trash) do
+        if AutoVendorSettings.trash[k] == nil then
+            if type(v) == "table" then
+                AutoVendorSettings.trash[k] = {}
+                for k2, v2 in pairs(v) do
+                    AutoVendorSettings.trash[k][k2] = v2
+                end
+            else
+                AutoVendorSettings.trash[k] = v
+            end
+        end
+    end
+    -- Specifically ensure trash.bags has keys 0-4
+    if not AutoVendorSettings.trash.bags then AutoVendorSettings.trash.bags = {} end
+    for i=0, 4 do
+        if AutoVendorSettings.trash.bags[i] == nil then
+            AutoVendorSettings.trash.bags[i] = true
+        end
+    end
 end
 
--- Initial call in case variables are already loaded (e.g. on /reload)
 InitializeSettings()
 
--- 3. Helper: Get Item ID from Link
--- 3. Helpers
-local function GetIDFromLink(link)
+-- 2. Helpers
+function AutoVendor.GetIDFromLink(link)
     if not link then return nil end
     local idString = link:match("|Hitem:(%d+):")
     return idString and tonumber(idString)
 end
 
-local function FormatMoney(amount)
+function AutoVendor.FormatMoney(amount)
     if not amount or amount == 0 then return "0g 0s 0c" end
-    -- GetCoinTextureString is the standard Blizzard way to format money with icons
     if GetCoinTextureString then
         return GetCoinTextureString(amount)
     elseif GetCoinText then
         return GetCoinText(amount)
     end
-    
-    -- Fallback manual formatting
+
     local gold = math.floor(amount / 10000)
     local silver = math.floor((amount % 10000) / 100)
     local copper = amount % 100
     return string.format("%dg %ds %dc", gold, silver, copper)
 end
 
--- 4. Slash Commands
+local GetIDFromLink = AutoVendor.GetIDFromLink
+local FormatMoney = AutoVendor.FormatMoney
+
+-- 3. Unified Process Queue
+local processQueue = {}
+local inQueue = {} -- to prevent double queuing
+local itemsSoldCount = 0
+local totalProfit = 0
+local itemsTrashedCount = 0
+local processTimer = 0
+
+local function ClearInQueue()
+    for b=0, 4 do
+        inQueue[b] = {}
+    end
+end
+ClearInQueue()
+
+local function OnUpdate(self, elapsed)
+    if #processQueue == 0 then
+        self:SetScript("OnUpdate", nil)
+        if itemsSoldCount > 0 then
+            print(string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit)))
+            itemsSoldCount = 0
+            totalProfit = 0
+        end
+        if itemsTrashedCount > 0 then
+            print(string.format("|cff00ff00AutoTrash:|r Deleted %d items.", itemsTrashedCount))
+            itemsTrashedCount = 0
+        end
+        return
+    end
+
+    local rate = AutoVendorSettings.sellRate or 33
+    local interval = 1 / rate
+    processTimer = processTimer + elapsed
+
+    if processTimer >= interval then
+        local item = processQueue[1]
+        if not item then
+            table.remove(processQueue, 1)
+            return
+        end
+
+        local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
+        if locked then
+            return
+        end
+
+        table.remove(processQueue, 1)
+        if inQueue[item.bag] then inQueue[item.bag][item.slot] = nil end
+        processTimer = 0
+
+        local link = GetContainerItemLink(item.bag, item.slot)
+        if link then
+            local itemID = GetIDFromLink(link)
+            if not count or count == 0 then count = 1 end
+
+            if item.action == "sell" then
+                if not isMerchantOpen then return end
+                local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
+                local isException = (itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID])
+
+                local shouldSell = false
+                if not isException then
+                    if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
+                    elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
+                    elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
+                    elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
+                    end
+                end
+
+                if shouldSell and price and price > 0 then
+                    UseContainerItem(item.bag, item.slot)
+
+                    local itemProfit = (price * count)
+                    itemsSoldCount = itemsSoldCount + count
+                    totalProfit = totalProfit + itemProfit
+
+                    local s = AutoVendorSettings.stats
+                    s.totalGold = (s.totalGold or 0) + itemProfit
+                    if quality and quality >= 0 and quality <= 3 then
+                        local countKey = "count" .. quality
+                        s[countKey] = (s[countKey] or 0) + count
+                    end
+                end
+
+            elseif item.action == "trash" then
+                if itemID and AutoVendorSettings.trash.items[itemID] then
+                    ClearCursor()
+                    PickupContainerItem(item.bag, item.slot)
+                    DeleteCursorItem()
+
+                    itemsTrashedCount = itemsTrashedCount + 1
+                    local ts = AutoVendorSettings.trash.stats
+                    ts.total = (ts.total or 0) + 1
+                    ts.itemCounts[itemID] = (ts.itemCounts[itemID] or 0) + 1
+                end
+            end
+        end
+    end
+end
+
+local function ScanBags(action)
+    local queued = false
+    for bag = 0, 4 do
+        if action == "sell" or (action == "trash" and AutoVendorSettings.trash.bags[bag]) then
+            local slots = GetContainerNumSlots(bag)
+            for slot = 1, slots do
+                if not inQueue[bag][slot] then
+                    local link = GetContainerItemLink(bag, slot)
+                    if link then
+                        local itemID = GetIDFromLink(link)
+                        local _, _, locked = GetContainerItemInfo(bag, slot)
+
+                        local shouldAdd = false
+                        if action == "sell" and isMerchantOpen then
+                            local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
+                            local isException = (itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID])
+                            if not isException and price and price > 0 then
+                                if (quality == 0 and AutoVendorSettings.sellGreys) or
+                                   (quality == 1 and AutoVendorSettings.sellWhites) or
+                                   (quality == 2 and AutoVendorSettings.sellGreens) or
+                                   (quality == 3 and AutoVendorSettings.sellBlues) then
+                                    shouldAdd = true
+                                end
+                            end
+                        elseif action == "trash" and AutoVendorSettings.trash.enabled then
+                            if itemID and AutoVendorSettings.trash.items[itemID] then
+                                shouldAdd = true
+                            end
+                        end
+
+                        if shouldAdd and not locked then
+                            table.insert(processQueue, {bag = bag, slot = slot, action = action})
+                            inQueue[bag][slot] = true
+                            queued = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if queued then
+        frame:SetScript("OnUpdate", OnUpdate)
+    end
+end
+
+-- 4. Slash Commands & Import
+local function ImportMondDelete()
+    if not MondDeleteDB then
+        print("|cffff0000AutoVendor:|r MondDeleteDB not found.")
+        return
+    end
+
+    local count = 0
+    if MondDeleteDB.profiles then
+        for pName, profile in pairs(MondDeleteDB.profiles) do
+            if profile.items then
+                for itemID, _ in pairs(profile.items) do
+                    local id = tonumber(itemID) or itemID
+                    if not AutoVendorSettings.trash.items[id] then
+                        AutoVendorSettings.trash.items[id] = true
+                        count = count + 1
+                    end
+                end
+            end
+        end
+    end
+    if MondDeleteDB.items then
+        for itemID, _ in pairs(MondDeleteDB.items) do
+             local id = tonumber(itemID) or itemID
+             if not AutoVendorSettings.trash.items[id] then
+                 AutoVendorSettings.trash.items[id] = true
+                 count = count + 1
+             end
+        end
+    end
+    print("|cff00ff00AutoVendor:|r Imported " .. count .. " items from MondDelete.")
+end
+
 SLASH_AUTOVENDOR1 = "/autovendor"
+SLASH_AUTOVENDOR2 = "/av"
 SlashCmdList["AUTOVENDOR"] = function(msg)
     if not msg then msg = "" end
     local cmd, arg1 = msg:match("^(%S*)%s*(.-)$")
-    
+
     if cmd == "greys" then
         AutoVendorSettings.sellGreys = not AutoVendorSettings.sellGreys
         print("|cff00ff00AutoVendor:|r Selling Greys " .. (AutoVendorSettings.sellGreys and "enabled" or "disabled"))
-    
     elseif cmd == "whites" then
         AutoVendorSettings.sellWhites = not AutoVendorSettings.sellWhites
         print("|cff00ff00AutoVendor:|r Selling Whites " .. (AutoVendorSettings.sellWhites and "enabled" or "disabled"))
-
     elseif cmd == "greens" then
         AutoVendorSettings.sellGreens = not AutoVendorSettings.sellGreens
         print("|cff00ff00AutoVendor:|r Selling Greens " .. (AutoVendorSettings.sellGreens and "enabled" or "disabled"))
-
     elseif cmd == "blues" then
         AutoVendorSettings.sellBlues = not AutoVendorSettings.sellBlues
         print("|cff00ff00AutoVendor:|r Selling Blues " .. (AutoVendorSettings.sellBlues and "enabled" or "disabled"))
-
     elseif cmd == "add" then
         local itemID = GetIDFromLink(arg1)
         if itemID then
-            if not AutoVendorSettings.exceptions then AutoVendorSettings.exceptions = {} end
             AutoVendorSettings.exceptions[itemID] = true
             print("|cff00ff00AutoVendor:|r Added Item ID " .. itemID .. " to exception list.")
         else
             print("|cffff0000Error:|r Usage: /autovendor add [itemlink]")
         end
-
     elseif cmd == "remove" then
         local itemID = GetIDFromLink(arg1)
-        if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
+        if itemID and AutoVendorSettings.exceptions[itemID] then
             AutoVendorSettings.exceptions[itemID] = nil
             print("|cff00ff00AutoVendor:|r Removed Item ID " .. itemID .. " from exception list.")
         else
             print("|cffff0000Error:|r Item not found or invalid link.")
         end
-
     elseif cmd == "list" then
-        if not AutoVendorSettings.exceptions then AutoVendorSettings.exceptions = {} end
         local count = 0
         print("|cff00ff00AutoVendor:|r --- Exception List ---")
         for id, _ in pairs(AutoVendorSettings.exceptions) do
@@ -129,16 +328,16 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
             print(count .. ". " .. (name or "Unknown") .. " (ID: " .. id .. ")")
         end
         if count == 0 then print("List is empty.") end
-
     elseif cmd == "sellrate" then
         local rate = tonumber(arg1)
-        if rate and rate >= 1 and rate <= 100 then
+        if rate and rate >= 1 and rate <= 1000 then
             AutoVendorSettings.sellRate = rate
-            print("|cff00ff00AutoVendor:|r Selling rate set to " .. rate .. " items per second.")
+            print("|cff00ff00AutoVendor:|r Selling/Trash rate set to " .. rate .. " items per second.")
         else
-            print("|cffff0000Error:|r Rate must be a number between 1 and 100.")
+            print("|cffff0000Error:|r Rate must be a number between 1 and 1000.")
         end
-
+    elseif cmd == "import" then
+        ImportMondDelete()
     elseif cmd == "stats" then
         local stats = AutoVendorSettings.stats or {}
         print("|cff00ff00AutoVendor Lifetime Statistics:|r")
@@ -148,151 +347,74 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         print("    |cffffffffCommon (White):|r " .. (stats.count1 or 0))
         print("    |cff1eff00Uncommon (Green):|r " .. (stats.count2 or 0))
         print("    |cff0070ddRare (Blue):|r " .. (stats.count3 or 0))
-
     else
         print("|cffffff00AutoVendor usage:|r")
+        print("  /autovendor - Open Integrated UI")
+        print("  /autotrash - Open Integrated UI (AutoTrash section)")
         print("  /autovendor [greys|whites|greens|blues] - Toggle selling")
-        print("  /autovendor add [itemlink] - Ignore item")
-        print("  /autovendor remove [itemlink] - Unignore item")
+        print("  /autovendor add [itemlink] - Ignore item from selling")
         print("  /autovendor list - Show ignored items")
-        print("  /autovendor sellrate [1-100] - Items sold per second (Default: 33)")
-        print("  /autovendor stats - Show lifetime statistics")
+        print("  /autovendor sellrate [1-1000] - Items per second")
+        print("  /autovendor stats - Show statistics")
+        print("  /autovendor import - Import MondDelete list")
     end
 end
 
--- 5. Vendor Logic (WotLK Compatible)
-local sellQueue = {}
-local itemsSoldCount = 0
-local totalProfit = 0
-local sellTimer = 0
-
-local function OnUpdate(self, elapsed)
-    if #sellQueue == 0 then
-        self:SetScript("OnUpdate", nil)
-        if itemsSoldCount > 0 then
-            print(string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit)))
-        end
-        return
-    end
-
-    local rate = AutoVendorSettings.sellRate or 33
-    local interval = 1 / rate
-    sellTimer = sellTimer + elapsed
-
-    if sellTimer >= interval then
-        local item = sellQueue[1] -- Peek at the first item
-        if not item then
-            table.remove(sellQueue, 1)
-            return
-        end
-
-        local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
-        if locked then
-            -- Item is locked, wait for next OnUpdate tick to try again
-            -- We don't reset sellTimer to 0, so we check again next frame
-            return
-        end
-
-        -- Safe to process, so remove from queue and reset timer
-        table.remove(sellQueue, 1)
-        sellTimer = 0
-
-        local link = GetContainerItemLink(item.bag, item.slot)
-        if link then
-            local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
-            local itemID = GetIDFromLink(link)
-            
-            if not count or count == 0 then count = 1 end
-
-            local isException = false
-            if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
-                isException = true
-            end
-
-            local shouldSell = false
-            if not isException then
-                if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
-                elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
-                elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
-                elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
-                end
-            end
-
-            if shouldSell and price and price > 0 then
-                UseContainerItem(item.bag, item.slot)
-                
-                local itemProfit = (price * count)
-                itemsSoldCount = itemsSoldCount + count
-                totalProfit = totalProfit + itemProfit
-
-                -- Update lifetime stats
-                if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
-                local s = AutoVendorSettings.stats
-                s.totalGold = (s.totalGold or 0) + itemProfit
-                if quality and quality >= 0 and quality <= 3 then
-                    local countKey = "count" .. quality
-                    s[countKey] = (s[countKey] or 0) + count
-                end
-            end
-        end
-    end
+SLASH_AUTOTRASH1 = "/autotrash"
+SLASH_AUTOTRASH2 = "/at"
+SlashCmdList["AUTOTRASH"] = function(msg)
+    -- Will point to UI later
+    print("|cff00ff00AutoTrash:|r Use /autovendor import to import MondDelete list.")
 end
 
+-- 5. Events & Hooks
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
+frame:RegisterEvent("BAG_UPDATE")
+
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "AutoVendor" then
         InitializeSettings()
     elseif event == "MERCHANT_SHOW" then
-        -- Don't start a new scan if we are already processing a queue
-        if #sellQueue > 0 then return end
-
-        sellQueue = {}
-        itemsSoldCount = 0
-        totalProfit = 0
-        sellTimer = 1 / AutoVendorSettings.sellRate -- start first sell immediately
-
-        -- Only iterate through character bags (0 = backpack, 1-4 = equipped bags)
-        -- This excludes bank bags (-1 and 5-11)
-        for bag = 0, 4 do
-            local slots = GetContainerNumSlots(bag)
-            if slots > 0 then
-                for slot = 1, slots do
-                    local link = GetContainerItemLink(bag, slot)
-                    if link then
-                        local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
-                        local itemID = GetIDFromLink(link)
-                        local _, _, locked = GetContainerItemInfo(bag, slot)
-
-                        local isException = false
-                        if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
-                            isException = true
-                        end
-
-                        local shouldSell = false
-                        if not isException then
-                            if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
-                            elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
-                            elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
-                            elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
-                            end
-                        end
-
-                        -- Only queue if it's not locked and should be sold
-                        if not locked and shouldSell and price and price > 0 then
-                            table.insert(sellQueue, {bag = bag, slot = slot})
-                        end
-                    end
-                end
+        isMerchantOpen = true
+        ScanBags("sell")
+    elseif event == "MERCHANT_CLOSED" then
+        isMerchantOpen = false
+        -- Stop selling but allow trashing to continue
+        for i = #processQueue, 1, -1 do
+            if processQueue[i].action == "sell" then
+                local item = table.remove(processQueue, i)
+                if inQueue[item.bag] then inQueue[item.bag][item.slot] = nil end
             end
         end
-
-        if #sellQueue > 0 then
-            self:SetScript("OnUpdate", OnUpdate)
+    elseif event == "BAG_UPDATE" then
+        if AutoVendorSettings.trash.enabled then
+            ScanBags("trash")
         end
-    elseif event == "MERCHANT_CLOSED" then
-        sellQueue = {}
-        self:SetScript("OnUpdate", nil)
     end
 end)
+
+-- Alt + Right Click Hook
+local function AddToTrash(itemID, link)
+    if not itemID then return end
+    if not AutoVendorSettings.trash.items[itemID] then
+        AutoVendorSettings.trash.items[itemID] = true
+        print("|cff00ff00AutoTrash:|r Added to delete list: " .. (link or itemID))
+    end
+end
+
+local old_OnClick = ContainerFrameItemButton_OnModifiedClick
+function ContainerFrameItemButton_OnModifiedClick(self, button)
+    if button == "RightButton" and IsAltKeyDown() then
+        local bag = self:GetParent():GetID()
+        local slot = self:GetID()
+        local link = GetContainerItemLink(bag, slot)
+        local itemID = GetIDFromLink(link)
+        if itemID then
+            AddToTrash(itemID, link)
+        end
+        return
+    end
+    old_OnClick(self, button)
+end
