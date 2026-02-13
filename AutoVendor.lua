@@ -16,6 +16,7 @@ local defaults = {
     sellWhites = false,
     sellGreens = true,
     sellBlues = true,
+    sellRate = 33,
     exceptions = {}
 }
 
@@ -85,12 +86,22 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         end
         if count == 0 then print("List is empty.") end
 
+    elseif cmd == "sellrate" then
+        local rate = tonumber(arg1)
+        if rate and rate >= 1 and rate <= 100 then
+            AutoVendorSettings.sellRate = rate
+            print("|cff00ff00AutoVendor:|r Selling rate set to " .. rate .. " items per second.")
+        else
+            print("|cffff0000Error:|r Rate must be a number between 1 and 100.")
+        end
+
     else
         print("|cffffff00AutoVendor usage:|r")
         print("  /autovendor [greys|whites|greens|blues] - Toggle selling")
         print("  /autovendor add [itemlink] - Ignore item")
         print("  /autovendor remove [itemlink] - Unignore item")
         print("  /autovendor list - Show ignored items")
+        print("  /autovendor sellrate [1-100] - Items sold per second (Default: 33)")
     end
 end
 
@@ -99,7 +110,6 @@ local sellQueue = {}
 local itemsSoldCount = 0
 local totalProfit = 0
 local sellTimer = 0
-local SELL_INTERVAL = 0.03 -- Max ~33 items per second (1/33 ≈ 0.0303)
 
 local function OnUpdate(self, elapsed)
     if #sellQueue == 0 then
@@ -110,8 +120,9 @@ local function OnUpdate(self, elapsed)
         return
     end
 
+    local interval = 1 / AutoVendorSettings.sellRate
     sellTimer = sellTimer + elapsed
-    if sellTimer >= SELL_INTERVAL then
+    if sellTimer >= interval then
         sellTimer = 0
         local item = table.remove(sellQueue, 1)
         if item then
@@ -154,7 +165,7 @@ frame:SetScript("OnEvent", function(self, event)
         sellQueue = {}
         itemsSoldCount = 0
         totalProfit = 0
-        sellTimer = SELL_INTERVAL -- start first sell immediately
+        sellTimer = 1 / AutoVendorSettings.sellRate -- start first sell immediately
 
         -- Only iterate through character bags (0 = backpack, 1-4 = equipped bags)
         -- This excludes bank bags (-1 and 5-11)
