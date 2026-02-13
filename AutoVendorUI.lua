@@ -6,10 +6,15 @@ local UI = AutoVendorUI
 UI.tabs = {}
 UI.pages = {}
 
-local function GetIDFromLink(link)
-    if not link then return nil end
-    local idString = link:match("|Hitem:(%d+):")
-    return idString and tonumber(idString)
+local function FormatMoney(amount)
+    if not amount or amount == 0 then return "0g 0s 0c" end
+    if GetCoinTextureString then
+        return GetCoinTextureString(amount)
+    end
+    local gold = math.floor(amount / 10000)
+    local silver = math.floor((amount % 10000) / 100)
+    local copper = amount % 100
+    return string.format("%dg %ds %dc", gold, silver, copper)
 end
 
 -------------------------------------------------
@@ -72,7 +77,6 @@ function UI:SetTab(id)
     if t.refresh then
         t.refresh(self.pages[id])
     end
-
 end
 
 UI.tabButtons = {}
@@ -130,11 +134,11 @@ function(p)
     rateEB:SetMaxLetters(3)
     rateEB:SetScript("OnEnterPressed", function(self)
         local val = tonumber(self:GetText())
-        if val and val >= 1 and val <= 100 then
+        if val and val >= 1 and val <= 200 then
             AutoVendorSettings.sellRate = val
             print("|cff00ff00AutoVendor:|r Selling rate set to " .. val)
         else
-            print("|cffff0000Error:|r Rate must be 1-100")
+            print("|cffff0000Error:|r Rate must be 1-200")
             self:SetText(AutoVendorSettings.sellRate or 33)
         end
         self:ClearFocus()
@@ -155,8 +159,10 @@ end)
 -------------------------------------------------
 local function Items_Refresh(p)
     local list = {}
-    for id, _ in pairs(AutoVendorSettings.exceptions or {}) do
-        table.insert(list, id)
+    if AutoVendorSettings.exceptions then
+        for id, _ in pairs(AutoVendorSettings.exceptions) do
+            table.insert(list, id)
+        end
     end
     table.sort(list)
 
@@ -221,17 +227,6 @@ end)
 -------------------------------------------------
 -- STATS TAB
 -------------------------------------------------
-local function FormatMoney(amount)
-    if not amount or amount == 0 then return "0g 0s 0c" end
-    if GetCoinTextureString then
-        return GetCoinTextureString(amount)
-    end
-    local gold = math.floor(amount / 10000)
-    local silver = math.floor((amount % 10000) / 100)
-    local copper = amount % 100
-    return string.format("%dg %ds %dc", gold, silver, copper)
-end
-
 UI:RegisterTab(3, "Stats",
 function(p)
     -- Build
@@ -274,6 +269,130 @@ function(p)
     p.count2:SetText("|cff1eff00Uncommon (Green):|r " .. (s.count2 or 0))
     p.count3:SetText("|cff0070ddRare (Blue):|r " .. (s.count3 or 0))
 end)
+
+-------------------------------------------------
+-- GPH OVERLAY
+-------------------------------------------------
+local gph = CreateFrame("Frame", "AutoVendorGPHFrame", UIParent)
+gph:SetSize(200, 130)
+gph:SetPoint("CENTER")
+gph:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left=4, right=4, top=4, bottom=4 }
+})
+gph:SetMovable(true)
+gph:EnableMouse(true)
+gph:RegisterForDrag("LeftButton")
+gph:SetScript("OnDragStart", gph.StartMoving)
+gph:SetScript("OnDragStop", gph.StopMovingOrSizing)
+gph:Hide()
+
+UI.gphFrame = gph
+
+local gphTitle = gph:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+gphTitle:SetPoint("TOP", 0, -10)
+gphTitle:SetText("GPH Tracker")
+
+local timeText = gph:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+timeText:SetPoint("TOP", gphTitle, "BOTTOM", 0, -5)
+
+local goldText = gph:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+goldText:SetPoint("TOP", timeText, "BOTTOM", 0, -5)
+
+local gphText = gph:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+gphText:SetPoint("TOP", goldText, "BOTTOM", 0, -5)
+
+local function UpdateGPHDisplay()
+    local data = AutoVendorGPH
+    local elapsed = data.elapsed
+    local h = math.floor(elapsed / 3600)
+    local m = math.floor((elapsed % 3600) / 60)
+    local s = elapsed % 60
+    timeText:SetText(string.format("Time: %02d:%02d:%02d", h, m, s))
+    goldText:SetText("Gold: " .. FormatMoney(data.goldGained))
+
+    local gphVal = 0
+    if elapsed > 0 then
+        gphVal = (data.goldGained / elapsed) * 3600
+    end
+    gphText:SetText("GPH: " .. FormatMoney(gphVal))
+end
+
+local btnStart = CreateFrame("Button", nil, gph, "UIPanelButtonTemplate")
+btnStart:SetSize(60, 20)
+btnStart:SetPoint("BOTTOMLEFT", 10, 10)
+btnStart:SetText("Start")
+
+local btnPause = CreateFrame("Button", nil, gph, "UIPanelButtonTemplate")
+btnPause:SetSize(60, 20)
+btnPause:SetPoint("LEFT", btnStart, "RIGHT", 5, 0)
+btnPause:SetText("Pause")
+
+local btnStop = CreateFrame("Button", nil, gph, "UIPanelButtonTemplate")
+btnStop:SetSize(60, 20)
+btnStop:SetPoint("LEFT", btnPause, "RIGHT", 5, 0)
+btnStop:SetText("Stop")
+
+local function UpdateGPHButtons()
+    local data = AutoVendorGPH
+    if not data.active then
+        btnStart:Enable()
+        btnStart:SetText("Start")
+        btnPause:Disable()
+        btnStop:Disable()
+    elseif data.paused then
+        btnStart:Enable()
+        btnStart:SetText("Resume")
+        btnPause:Disable()
+        btnStop:Enable()
+    else
+        btnStart:Disable()
+        btnPause:Enable()
+        btnStop:Enable()
+    end
+end
+
+btnStart:SetScript("OnClick", function()
+    AutoVendorGPH:Start()
+    UpdateGPHButtons()
+end)
+
+btnPause:SetScript("OnClick", function()
+    AutoVendorGPH:Pause()
+    UpdateGPHButtons()
+end)
+
+btnStop:SetScript("OnClick", function()
+    AutoVendorGPH:Stop()
+    UpdateGPHButtons()
+    UpdateGPHDisplay()
+end)
+
+local lastTick = 0
+gph:SetScript("OnUpdate", function(self, elapsed)
+    lastTick = lastTick + elapsed
+    if lastTick >= 1 then
+        lastTick = 0
+        if AutoVendorGPH.active and not AutoVendorGPH.paused then
+            AutoVendorGPH.elapsed = AutoVendorGPH.elapsed + 1
+            AutoVendorGPH.goldGained = GetMoney() - AutoVendorGPH.startGold
+        end
+        UpdateGPHDisplay()
+        UpdateGPHButtons()
+    end
+end)
+
+function UI:ToggleGPH()
+    if gph:IsShown() then
+        gph:Hide()
+    else
+        gph:Show()
+        UpdateGPHDisplay()
+        UpdateGPHButtons()
+    end
+end
 
 -------------------------------------------------
 -- UI CONTROL

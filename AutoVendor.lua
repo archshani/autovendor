@@ -54,7 +54,6 @@ end
 -- Initial call in case variables are already loaded (e.g. on /reload)
 InitializeSettings()
 
--- 3. Helper: Get Item ID from Link
 -- 3. Helpers
 local function GetIDFromLink(link)
     if not link then return nil end
@@ -70,7 +69,7 @@ local function FormatMoney(amount)
     elseif GetCoinText then
         return GetCoinText(amount)
     end
-    
+
     -- Fallback manual formatting
     local gold = math.floor(amount / 10000)
     local silver = math.floor((amount % 10000) / 100)
@@ -78,7 +77,55 @@ local function FormatMoney(amount)
     return string.format("%dg %ds %dc", gold, silver, copper)
 end
 
--- 4. Slash Commands
+-- 4. Slash Commands & GPH Logic
+AutoVendorGPH = {
+    active = false,
+    paused = false,
+    elapsed = 0,
+    goldGained = 0,
+    startGold = 0,
+}
+
+function AutoVendorGPH:Start()
+    if self.active and not self.paused then return end
+    if self.paused then
+        self.paused = false
+        self.startGold = GetMoney() - self.goldGained
+    else
+        self.active = true
+        self.paused = false
+        self.elapsed = 0
+        self.goldGained = 0
+        self.startGold = GetMoney()
+    end
+    print("|cff00ff00AutoVendor:|r GPH Tracking Started.")
+end
+
+function AutoVendorGPH:Pause()
+    if not self.active or self.paused then return end
+    self.paused = true
+    print("|cff00ff00AutoVendor:|r GPH Tracking Paused.")
+end
+
+function AutoVendorGPH:Stop()
+    if not self.active then return end
+    local totalGained = self.goldGained
+    local totalElapsed = self.elapsed
+    local gph = 0
+    if totalElapsed > 0 then
+        gph = (totalGained / totalElapsed) * 3600
+    end
+
+    print(string.format("|cff00ff00AutoVendor:|r You made %s in %d minutes with total %s per hour.",
+        FormatMoney(totalGained), math.floor(totalElapsed / 60), FormatMoney(gph)))
+
+    self.active = false
+    self.paused = false
+    self.elapsed = 0
+    self.goldGained = 0
+    print("|cff00ff00AutoVendor:|r GPH Tracking Stopped.")
+end
+
 SLASH_AUTOVENDOR1 = "/autovendor"
 SLASH_AUTOVENDOR2 = "/av"
 SlashCmdList["AUTOVENDOR"] = function(msg)
@@ -90,64 +137,10 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         end
         return
     end
+
     local cmd, arg1 = msg:match("^(%S*)%s*(.-)$")
-    
-    if cmd == "greys" then
-        AutoVendorSettings.sellGreys = not AutoVendorSettings.sellGreys
-        print("|cff00ff00AutoVendor:|r Selling Greys " .. (AutoVendorSettings.sellGreys and "enabled" or "disabled"))
-    
-    elseif cmd == "whites" then
-        AutoVendorSettings.sellWhites = not AutoVendorSettings.sellWhites
-        print("|cff00ff00AutoVendor:|r Selling Whites " .. (AutoVendorSettings.sellWhites and "enabled" or "disabled"))
 
-    elseif cmd == "greens" then
-        AutoVendorSettings.sellGreens = not AutoVendorSettings.sellGreens
-        print("|cff00ff00AutoVendor:|r Selling Greens " .. (AutoVendorSettings.sellGreens and "enabled" or "disabled"))
-
-    elseif cmd == "blues" then
-        AutoVendorSettings.sellBlues = not AutoVendorSettings.sellBlues
-        print("|cff00ff00AutoVendor:|r Selling Blues " .. (AutoVendorSettings.sellBlues and "enabled" or "disabled"))
-
-    elseif cmd == "add" then
-        local itemID = GetIDFromLink(arg1)
-        if itemID then
-            if not AutoVendorSettings.exceptions then AutoVendorSettings.exceptions = {} end
-            AutoVendorSettings.exceptions[itemID] = true
-            print("|cff00ff00AutoVendor:|r Added Item ID " .. itemID .. " to exception list.")
-        else
-            print("|cffff0000Error:|r Usage: /autovendor add [itemlink]")
-        end
-
-    elseif cmd == "remove" then
-        local itemID = GetIDFromLink(arg1)
-        if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
-            AutoVendorSettings.exceptions[itemID] = nil
-            print("|cff00ff00AutoVendor:|r Removed Item ID " .. itemID .. " from exception list.")
-        else
-            print("|cffff0000Error:|r Item not found or invalid link.")
-        end
-
-    elseif cmd == "list" then
-        if not AutoVendorSettings.exceptions then AutoVendorSettings.exceptions = {} end
-        local count = 0
-        print("|cff00ff00AutoVendor:|r --- Exception List ---")
-        for id, _ in pairs(AutoVendorSettings.exceptions) do
-            count = count + 1
-            local name = GetItemInfo(id)
-            print(count .. ". " .. (name or "Unknown") .. " (ID: " .. id .. ")")
-        end
-        if count == 0 then print("List is empty.") end
-
-    elseif cmd == "sellrate" then
-        local rate = tonumber(arg1)
-        if rate and rate >= 1 and rate <= 100 then
-            AutoVendorSettings.sellRate = rate
-            print("|cff00ff00AutoVendor:|r Selling rate set to " .. rate .. " items per second.")
-        else
-            print("|cffff0000Error:|r Rate must be a number between 1 and 100.")
-        end
-
-    elseif cmd == "stats" then
+    if cmd == "stats" then
         local stats = AutoVendorSettings.stats or {}
         print("|cff00ff00AutoVendor Lifetime Statistics:|r")
         print("  Total Gold Earned: " .. FormatMoney(stats.totalGold or 0))
@@ -157,14 +150,24 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         print("    |cff1eff00Uncommon (Green):|r " .. (stats.count2 or 0))
         print("    |cff0070ddRare (Blue):|r " .. (stats.count3 or 0))
 
+    elseif cmd == "gph" then
+        if arg1 == "start" then
+            AutoVendorGPH:Start()
+        elseif arg1 == "pause" then
+            AutoVendorGPH:Pause()
+        elseif arg1 == "stop" then
+            AutoVendorGPH:Stop()
+        else
+            if AutoVendorUI and AutoVendorUI.ToggleGPH then
+                AutoVendorUI:ToggleGPH()
+            end
+        end
+
     else
         print("|cffffff00AutoVendor usage:|r")
-        print("  /autovendor [greys|whites|greens|blues] - Toggle selling")
-        print("  /autovendor add [itemlink] - Ignore item")
-        print("  /autovendor remove [itemlink] - Unignore item")
-        print("  /autovendor list - Show ignored items")
-        print("  /autovendor sellrate [1-100] - Items sold per second (Default: 33)")
-        print("  /autovendor stats - Show lifetime statistics")
+        print("  /av - Toggle UI")
+        print("  /av stats - Show lifetime statistics")
+        print("  /av gph [start|pause|stop] - Track Gold Per Hour")
     end
 end
 
@@ -197,7 +200,6 @@ local function OnUpdate(self, elapsed)
         local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
         if locked then
             -- Item is locked, wait for next OnUpdate tick to try again
-            -- We don't reset sellTimer to 0, so we check again next frame
             return
         end
 
@@ -209,7 +211,7 @@ local function OnUpdate(self, elapsed)
         if link then
             local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
             local itemID = GetIDFromLink(link)
-            
+
             if not count or count == 0 then count = 1 end
 
             local isException = false
@@ -228,7 +230,7 @@ local function OnUpdate(self, elapsed)
 
             if shouldSell and price and price > 0 then
                 UseContainerItem(item.bag, item.slot)
-                
+
                 local itemProfit = (price * count)
                 itemsSoldCount = itemsSoldCount + count
                 totalProfit = totalProfit + itemProfit
@@ -280,16 +282,13 @@ frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "AutoVendor" then
         InitializeSettings()
     elseif event == "MERCHANT_SHOW" then
-        -- Don't start a new scan if we are already processing a queue
         if #sellQueue > 0 then return end
 
         sellQueue = {}
         itemsSoldCount = 0
         totalProfit = 0
-        sellTimer = 1 / AutoVendorSettings.sellRate -- start first sell immediately
+        sellTimer = 1 / AutoVendorSettings.sellRate
 
-        -- Only iterate through character bags (0 = backpack, 1-4 = equipped bags)
-        -- This excludes bank bags (-1 and 5-11)
         for bag = 0, 4 do
             local slots = GetContainerNumSlots(bag)
             if slots > 0 then
@@ -314,7 +313,6 @@ frame:SetScript("OnEvent", function(self, event, arg1)
                             end
                         end
 
-                        -- Only queue if it's not locked and should be sold
                         if not locked and shouldSell and price and price > 0 then
                             table.insert(sellQueue, {bag = bag, slot = slot})
                         end
