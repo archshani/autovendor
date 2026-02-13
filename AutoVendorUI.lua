@@ -202,7 +202,8 @@ function(p)
     end
 end)
 
--- ITEMS (Trash Blacklist)
+
+-- ITEMS (Trash Whitelist)
 -- Simplified port of Items.lua from MondDelete
 local function Items_Refresh(p)
     local list = {}
@@ -245,8 +246,12 @@ end
 AutoVendorUI:RegisterTab("trash", 2, "Items",
 function(p)
     p.rows = {}
+    local desc = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    desc:SetPoint("TOPLEFT", 10, -5)
+    desc:SetText("|cff00ff00Trash Whitelist:|r Only items in this list will be deleted.")
+
     p.scroll = CreateFrame("ScrollFrame", "AutoTrashItemsScroll", p, "UIPanelScrollFrameTemplate")
-    p.scroll:SetPoint("TOPLEFT", 5, -5)
+    p.scroll:SetPoint("TOPLEFT", 5, -25)
     p.scroll:SetPoint("BOTTOMRIGHT", -25, 5)
     p.content = CreateFrame("Frame", nil, p.scroll)
     p.content:SetSize(330, 1)

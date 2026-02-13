@@ -141,21 +141,19 @@ local function OnUpdate(self, elapsed)
     local interval = 1 / rate
     processTimer = processTimer + elapsed
 
-    if processTimer >= interval then
+    while processTimer >= interval and #processQueue > 0 do
         local item = processQueue[1]
-        if not item then
-            table.remove(processQueue, 1)
-            return
-        end
-
         local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
+
         if locked then
-            return
+            -- If the top item is locked, we can't process it yet.
+            -- We stop the loop but don't reset processTimer so we try again next frame.
+            break
         end
 
         table.remove(processQueue, 1)
         if inQueue[item.bag] then inQueue[item.bag][item.slot] = nil end
-        processTimer = 0
+        processTimer = processTimer - interval
 
         local link = GetContainerItemLink(item.bag, item.slot)
         if link then
