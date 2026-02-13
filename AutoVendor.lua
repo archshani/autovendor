@@ -95,57 +95,103 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
 end
 
 -- 5. Vendor Logic (WotLK Compatible)
-frame:RegisterEvent("MERCHANT_SHOW")
-frame:SetScript("OnEvent", function()
-    local total = 0
-    local itemsSold = 0
+local sellQueue = {}
+local itemsSoldCount = 0
+local totalProfit = 0
+local sellTimer = 0
+local SELL_INTERVAL = 0.03 -- Max ~33 items per second (1/33 ≈ 0.0303)
 
-    -- Iterate through all bags (Backpack is 0, Bank bags are usually -1 but we stop at 4)
-    for bag = 0, 4 do
-        -- Get number of slots in this bag
-        local slots = GetContainerNumSlots(bag)
-        if slots > 0 then
-            for slot = 1, slots do
-                local link = GetContainerItemLink(bag, slot)
-                
-                if link then
-                    -- Get Item Info
-                    local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
-                    local itemID = GetIDFromLink(link)
-                    
-                    -- Get Stack Count (WotLK returns: icon, count, locked, quality...)
-                    -- We select the 2nd return value
-                    local _, count = GetContainerItemInfo(bag, slot)
-                    if not count or count == 0 then count = 1 end
+local function OnUpdate(self, elapsed)
+    if #sellQueue == 0 then
+        self:SetScript("OnUpdate", nil)
+        if itemsSoldCount > 0 then
+            print(string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, GetCoinText(totalProfit)))
+        end
+        return
+    end
 
-                    -- Check Exceptions
-                    local isException = false
-                    if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
-                        isException = true
+    sellTimer = sellTimer + elapsed
+    if sellTimer >= SELL_INTERVAL then
+        sellTimer = 0
+        local item = table.remove(sellQueue, 1)
+        if item then
+            -- Verify it's still the same item or should still be sold
+            local link = GetContainerItemLink(item.bag, item.slot)
+            if link then
+                local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
+                local itemID = GetIDFromLink(link)
+                local _, count = GetContainerItemInfo(item.bag, item.slot)
+                if not count or count == 0 then count = 1 end
+
+                local isException = false
+                if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
+                    isException = true
+                end
+
+                local shouldSell = false
+                if not isException then
+                    if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
+                    elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
+                    elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
+                    elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
                     end
+                end
 
-                    -- Logic Check
-                    local shouldSell = false
-                    if not isException then
-                        if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
-                        elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
-                        elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
-                        elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
-                        end
-                    end
-
-                    -- Sell
-                    if shouldSell and price and price > 0 then
-                        UseContainerItem(bag, slot)
-                        total = total + (price * count)
-                        itemsSold = itemsSold + 1
-                    end
+                if shouldSell and price and price > 0 then
+                    UseContainerItem(item.bag, item.slot)
+                    itemsSoldCount = itemsSoldCount + 1
+                    totalProfit = totalProfit + (price * count)
                 end
             end
         end
     end
+end
 
-    if total > 0 then
-        print(string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSold, GetCoinText(total)))
+frame:RegisterEvent("MERCHANT_SHOW")
+frame:RegisterEvent("MERCHANT_CLOSED")
+frame:SetScript("OnEvent", function(self, event)
+    if event == "MERCHANT_SHOW" then
+        sellQueue = {}
+        itemsSoldCount = 0
+        totalProfit = 0
+        sellTimer = SELL_INTERVAL -- start first sell immediately
+
+        for bag = 0, 4 do
+            local slots = GetContainerNumSlots(bag)
+            if slots > 0 then
+                for slot = 1, slots do
+                    local link = GetContainerItemLink(bag, slot)
+                    if link then
+                        local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
+                        local itemID = GetIDFromLink(link)
+
+                        local isException = false
+                        if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
+                            isException = true
+                        end
+
+                        local shouldSell = false
+                        if not isException then
+                            if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
+                            elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
+                            elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
+                            elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
+                            end
+                        end
+
+                        if shouldSell and price and price > 0 then
+                            table.insert(sellQueue, {bag = bag, slot = slot})
+                        end
+                    end
+                end
+            end
+        end
+
+        if #sellQueue > 0 then
+            self:SetScript("OnUpdate", OnUpdate)
+        end
+    elseif event == "MERCHANT_CLOSED" then
+        sellQueue = {}
+        self:SetScript("OnUpdate", nil)
     end
 end)
