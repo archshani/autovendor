@@ -80,8 +80,16 @@ end
 
 -- 4. Slash Commands
 SLASH_AUTOVENDOR1 = "/autovendor"
+SLASH_AUTOVENDOR2 = "/av"
 SlashCmdList["AUTOVENDOR"] = function(msg)
-    if not msg then msg = "" end
+    if not msg or msg == "" then
+        if AutoVendorUI and AutoVendorUI.Toggle then
+            AutoVendorUI:Toggle()
+        else
+            print("|cffff0000Error:|r UI not loaded.")
+        end
+        return
+    end
     local cmd, arg1 = msg:match("^(%S*)%s*(.-)$")
     
     if cmd == "greys" then
@@ -236,6 +244,33 @@ local function OnUpdate(self, elapsed)
             end
         end
     end
+end
+
+-- 6. Hook for Alt+Right Click to add to exceptions
+local old_ContainerFrameItemButton_OnModifiedClick = ContainerFrameItemButton_OnModifiedClick
+function ContainerFrameItemButton_OnModifiedClick(self, button)
+    if button == "RightButton" and IsAltKeyDown() then
+        local bag = self:GetParent():GetID()
+        local slot = self:GetID()
+        local link = GetContainerItemLink(bag, slot)
+        local itemID = GetIDFromLink(link)
+
+        if itemID then
+            if not AutoVendorSettings.exceptions then AutoVendorSettings.exceptions = {} end
+            if not AutoVendorSettings.exceptions[itemID] then
+                AutoVendorSettings.exceptions[itemID] = true
+                print("|cff00ff00AutoVendor:|r Added " .. (link or "item") .. " to exception list.")
+                -- Refresh UI if it's shown and on Items tab
+                if AutoVendorUI and AutoVendorUI.frame:IsShown() and AutoVendorUI.pages[2] and AutoVendorUI.pages[2]:IsShown() then
+                    AutoVendorUI:SetTab(2)
+                end
+            else
+                print("|cff00ff00AutoVendor:|r Item is already in exception list.")
+            end
+        end
+        return
+    end
+    old_ContainerFrameItemButton_OnModifiedClick(self, button)
 end
 
 frame:RegisterEvent("ADDON_LOADED")
