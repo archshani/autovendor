@@ -126,12 +126,16 @@ local function OnUpdate(self, elapsed)
         sellTimer = 0
         local item = table.remove(sellQueue, 1)
         if item then
-            -- Verify it's still the same item or should still be sold
+            -- 1. Check if the slot is locked (already being processed)
+            local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
+            if locked then return end
+
+            -- 2. Verify it's still the same item or should still be sold
             local link = GetContainerItemLink(item.bag, item.slot)
             if link then
                 local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
                 local itemID = GetIDFromLink(link)
-                local _, count = GetContainerItemInfo(item.bag, item.slot)
+
                 if not count or count == 0 then count = 1 end
 
                 local isException = false
@@ -162,6 +166,9 @@ frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
 frame:SetScript("OnEvent", function(self, event)
     if event == "MERCHANT_SHOW" then
+        -- Don't start a new scan if we are already processing a queue
+        if #sellQueue > 0 then return end
+
         sellQueue = {}
         itemsSoldCount = 0
         totalProfit = 0
@@ -177,6 +184,7 @@ frame:SetScript("OnEvent", function(self, event)
                     if link then
                         local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
                         local itemID = GetIDFromLink(link)
+                        local _, _, locked = GetContainerItemInfo(bag, slot)
 
                         local isException = false
                         if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
@@ -192,7 +200,8 @@ frame:SetScript("OnEvent", function(self, event)
                             end
                         end
 
-                        if shouldSell and price and price > 0 then
+                        -- Only queue if it's not locked and should be sold
+                        if not locked and shouldSell and price and price > 0 then
                             table.insert(sellQueue, {bag = bag, slot = slot})
                         end
                     end
