@@ -50,10 +50,27 @@ for k, v in pairs(defaults.stats) do
 end
 
 -- 3. Helper: Get Item ID from Link
+-- 3. Helpers
 local function GetIDFromLink(link)
     if not link then return nil end
     local idString = link:match("|Hitem:(%d+):")
     return idString and tonumber(idString)
+end
+
+local function FormatMoney(amount)
+    if not amount or amount == 0 then return "0g 0s 0c" end
+    -- GetCoinTextureString is the standard Blizzard way to format money with icons
+    if GetCoinTextureString then
+        return GetCoinTextureString(amount)
+    elseif GetCoinText then
+        return GetCoinText(amount)
+    end
+
+    -- Fallback manual formatting
+    local gold = math.floor(amount / 10000)
+    local silver = math.floor((amount % 10000) / 100)
+    local copper = amount % 100
+    return string.format("%dg %ds %dc", gold, silver, copper)
 end
 
 -- 4. Slash Commands
@@ -118,13 +135,14 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         end
 
     elseif cmd == "stats" then
+        local stats = AutoVendorSettings.stats or {}
         print("|cff00ff00AutoVendor Lifetime Statistics:|r")
-        print("  Total Gold Earned: " .. GetCoinText(AutoVendorSettings.stats.totalGold))
+        print("  Total Gold Earned: " .. FormatMoney(stats.totalGold or 0))
         print("  Items Sold by Rarity:")
-        print("    |cff9d9d9dPoor (Grey):|r " .. AutoVendorSettings.stats.count0)
-        print("    |cffffffffCommon (White):|r " .. AutoVendorSettings.stats.count1)
-        print("    |cff1eff00Uncommon (Green):|r " .. AutoVendorSettings.stats.count2)
-        print("    |cff0070ddRare (Blue):|r " .. AutoVendorSettings.stats.count3)
+        print("    |cff9d9d9dPoor (Grey):|r " .. (stats.count0 or 0))
+        print("    |cffffffffCommon (White):|r " .. (stats.count1 or 0))
+        print("    |cff1eff00Uncommon (Green):|r " .. (stats.count2 or 0))
+        print("    |cff0070ddRare (Blue):|r " .. (stats.count3 or 0))
 
     else
         print("|cffffff00AutoVendor usage:|r")
@@ -147,7 +165,7 @@ local function OnUpdate(self, elapsed)
     if #sellQueue == 0 then
         self:SetScript("OnUpdate", nil)
         if itemsSoldCount > 0 then
-            print(string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, GetCoinText(totalProfit)))
+            print(string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit)))
         end
         return
     end
