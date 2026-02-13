@@ -6,3 +6,4 @@
 ## SavedVariables: AutoVendorSettings
 
 AutoVendor.lua
+AutoVendorUI.lua
