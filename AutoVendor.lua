@@ -156,6 +156,8 @@ frame:SetScript("OnEvent", function(self, event)
         totalProfit = 0
         sellTimer = SELL_INTERVAL -- start first sell immediately
 
+        -- Only iterate through character bags (0 = backpack, 1-4 = equipped bags)
+        -- This excludes bank bags (-1 and 5-11)
         for bag = 0, 4 do
             local slots = GetContainerNumSlots(bag)
             if slots > 0 then
