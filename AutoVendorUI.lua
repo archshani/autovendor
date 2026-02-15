@@ -87,11 +87,43 @@ function UI:SetTab(id)
     end
 end
 
+-------------------------------------------------
+-- INFO TAB
+-------------------------------------------------
+UI:RegisterTab(4, "Info",
+function(p)
+    local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 10, 0)
+    title:SetText("AutoVendor Help")
+
+    local helpText = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    helpText:SetPoint("TOPLEFT", 10, -40)
+    helpText:SetWidth(340)
+    helpText:SetJustifyH("LEFT")
+    helpText:SetText([[
+|cff00ff00Slash Commands:|r
+/av - Toggle this UI
+/av add [link] - Add item to exceptions
+/av remove [link] - Remove item from exceptions
+/av stats - Show lifetime statistics
+/av gph [start|pause|stop] - Track Gold Per Hour
+
+|cff00ff00Shortcuts:|r
+|cff00ff00Alt + Right Click|r on an item in your bags to toggle it in the exception list.
+
+|cff00ff00Settings:|r
+- |cff00ff00Sell Rate:|r How many items to sell per second.
+- |cff00ff00Batch Size:|r Maximum items to sell in a single frame.
+]])
+end,
+function(p)
+end)
+
 UI.tabButtons = {}
 local function BuildTabButtons()
-    local ids = {1, 2, 3} -- Settings, Items, Stats
-    local names = {"Settings", "Items", "Stats"}
-    
+    local ids = {1, 2, 3, 4} -- Settings, Items, Stats, Info
+    local names = {"Settings", "Items", "Stats", "Info"}
+
     for i, id in ipairs(ids) do
         local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         b:SetSize(80, 24)
@@ -107,7 +139,7 @@ end
 -------------------------------------------------
 -- SETTINGS TAB
 -------------------------------------------------
-UI:RegisterTab(1, "Settings", 
+UI:RegisterTab(1, "Settings",
 function(p)
     -- Build
     local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -139,19 +171,43 @@ function(p)
     rateEB:SetPoint("LEFT", rateLabel, "RIGHT", 10, 0)
     rateEB:SetAutoFocus(false)
     rateEB:SetNumeric(true)
-    rateEB:SetMaxLetters(3)
+    rateEB:SetMaxLetters(4)
     rateEB:SetScript("OnEnterPressed", function(self)
         local val = tonumber(self:GetText())
-        if val and val >= 1 and val <= 200 then
+        if val and val >= 1 and val <= 1000 then
             AutoVendorSettings.sellRate = val
             print("|cff00ff00AutoVendor:|r Selling rate set to " .. val)
         else
-            print("|cffff0000Error:|r Rate must be 1-200")
+            print("|cffff0000Error:|r Rate must be 1-1000")
             self:SetText(AutoVendorSettings.sellRate or 33)
         end
         self:ClearFocus()
     end)
     p.rateEB = rateEB
+
+    -- Batch Size
+    local batchLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    batchLabel:SetPoint("TOPLEFT", rateLabel, "BOTTOMLEFT", 0, -20)
+    batchLabel:SetText("Batch Size (items per tick):")
+
+    local batchEB = CreateFrame("EditBox", "AV_BatchSizeEB", p, "InputBoxTemplate")
+    batchEB:SetSize(50, 20)
+    batchEB:SetPoint("LEFT", batchLabel, "RIGHT", 10, 0)
+    batchEB:SetAutoFocus(false)
+    batchEB:SetNumeric(true)
+    batchEB:SetMaxLetters(2)
+    batchEB:SetScript("OnEnterPressed", function(self)
+        local val = tonumber(self:GetText())
+        if val and val >= 1 and val <= 33 then
+            AutoVendorSettings.sellBatchSize = val
+            print("|cff00ff00AutoVendor:|r Batch size set to " .. val)
+        else
+            print("|cffff0000Error:|r Batch size must be 1-33")
+            self:SetText(AutoVendorSettings.sellBatchSize or 1)
+        end
+        self:ClearFocus()
+    end)
+    p.batchEB = batchEB
 end,
 function(p)
     -- Refresh
@@ -160,6 +216,7 @@ function(p)
     p.sellGreens:SetChecked(AutoVendorSettings.sellGreens)
     p.sellBlues:SetChecked(AutoVendorSettings.sellBlues)
     p.rateEB:SetText(AutoVendorSettings.sellRate or 33)
+    p.batchEB:SetText(AutoVendorSettings.sellBatchSize or 1)
 end)
 
 -------------------------------------------------
@@ -183,26 +240,26 @@ local function Items_Refresh(p)
             r = CreateFrame("Frame", nil, p.content)
             r:SetSize(320, rowHeight)
             r:SetPoint("TOPLEFT", 0, -(i-1)*rowHeight)
-            
+
             r.text = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.text:SetPoint("LEFT", 5, 0)
-            
+
             r.remove = CreateFrame("Button", nil, r, "UIPanelCloseButton")
             r.remove:SetPoint("RIGHT", -5, 0)
             r.remove:SetScale(0.7)
-            
+
             p.rows[i] = r
         end
         r:SetPoint("TOPLEFT", 0, -(i-1)*rowHeight)
-        
+
         local name, link = GetItemInfo(id)
         r.text:SetText(link or name or ("Item ID: " .. id))
-        
+
         r.remove:SetScript("OnClick", function()
             AutoVendorSettings.exceptions[id] = nil
             Items_Refresh(p)
         end)
-        
+
         r:Show()
     end
     p.content:SetHeight(math.max(#list * rowHeight, 1))
@@ -243,7 +300,7 @@ function(p)
 
     p.count0 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     p.count0:SetPoint("TOPLEFT", 10, -40)
-    
+
     p.count1 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     p.count1:SetPoint("TOPLEFT", 10, -60)
 
@@ -252,7 +309,7 @@ function(p)
 
     p.count3 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     p.count3:SetPoint("TOPLEFT", 10, -100)
-    
+
     local resetBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     resetBtn:SetSize(100, 22)
     resetBtn:SetPoint("BOTTOMLEFT", 10, 10)
@@ -338,7 +395,7 @@ local function UpdateGPHDisplay()
     local s = elapsed % 60
     timeValue:SetText(string.format("%02d:%02d:%02d", h, m, s))
     goldValue:SetText(FormatMoneyGPH(data.goldGained))
-    
+
     local gphVal = 0
     if elapsed > 0 then
         gphVal = (data.goldGained / elapsed) * 3600
