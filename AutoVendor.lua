@@ -226,56 +226,58 @@ local function OnUpdate(self, elapsed)
     local interval = 1 / rate
     sellTimer = sellTimer + elapsed
 
-    local processedThisFrame = 0
-    while sellTimer >= interval and #sellQueue > 0 and processedThisFrame < batchSize do
-        local item = sellQueue[1] -- Peek at the first item
-        local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
-
-        if locked then
-            -- Item is locked, wait for next OnUpdate tick to try again
-            return
-        end
-
-        -- Safe to process, so remove from queue and decrement timer
-        table.remove(sellQueue, 1)
+    while sellTimer >= interval and #sellQueue > 0 do
         sellTimer = sellTimer - interval
-        processedThisFrame = processedThisFrame + 1
 
-        local link = GetContainerItemLink(item.bag, item.slot)
-        if link then
-            local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
-            local itemID = GetIDFromLink(link)
-            
-            if not count or count == 0 then count = 1 end
+        for i = 1, batchSize do
+            local item = sellQueue[1]
+            if not item then break end
 
-            local isException = false
-            if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
-                isException = true
+            local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
+            if locked then
+                -- If item is locked, we stop this batch and wait for next frame
+                return
             end
 
-            local shouldSell = false
-            if not isException then
-                if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
-                elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
-                elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
-                elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
+            -- Safe to process, so remove from queue
+            table.remove(sellQueue, 1)
+
+            local link = GetContainerItemLink(item.bag, item.slot)
+            if link then
+                local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
+                local itemID = GetIDFromLink(link)
+
+                if not count or count == 0 then count = 1 end
+
+                local isException = false
+                if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
+                    isException = true
                 end
-            end
 
-            if shouldSell and price and price > 0 then
-                UseContainerItem(item.bag, item.slot)
-                
-                local itemProfit = (price * count)
-                itemsSoldCount = itemsSoldCount + count
-                totalProfit = totalProfit + itemProfit
+                local shouldSell = false
+                if not isException then
+                    if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
+                    elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
+                    elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
+                    elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
+                    end
+                end
 
-                -- Update lifetime stats
-                if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
-                local s = AutoVendorSettings.stats
-                s.totalGold = (s.totalGold or 0) + itemProfit
-                if quality and quality >= 0 and quality <= 3 then
-                    local countKey = "count" .. quality
-                    s[countKey] = (s[countKey] or 0) + count
+                if shouldSell and price and price > 0 then
+                    UseContainerItem(item.bag, item.slot)
+
+                    local itemProfit = (price * count)
+                    itemsSoldCount = itemsSoldCount + count
+                    totalProfit = totalProfit + itemProfit
+
+                    -- Update lifetime stats
+                    if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
+                    local s = AutoVendorSettings.stats
+                    s.totalGold = (s.totalGold or 0) + itemProfit
+                    if quality and quality >= 0 and quality <= 3 then
+                        local countKey = "count" .. quality
+                        s[countKey] = (s[countKey] or 0) + count
+                    end
                 end
             end
         end

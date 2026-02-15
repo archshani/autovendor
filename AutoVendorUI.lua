@@ -112,8 +112,8 @@ function(p)
 |cff00ff00Ctrl + Right Click|r on an item in your bags to toggle it in the exception list.
 
 |cff00ff00Settings:|r
-- |cff00ff00Sell Rate:|r How many items to sell per second.
-- |cff00ff00Batch Size:|r Maximum items to sell in a single frame.
+- |cff00ff00Sell Rate:|r Frequency of sales (batches per second).
+- |cff00ff00Batch Size:|r Number of items sold in each batch.
 ]])
 end,
 function(p)
@@ -164,7 +164,7 @@ function(p)
     -- Sell Rate
     local rateLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     rateLabel:SetPoint("TOPLEFT", p.sellBlues, "BOTTOMLEFT", 0, -20)
-    rateLabel:SetText("Sell Rate (items per second):")
+    rateLabel:SetText("Sell Rate (batches per second):")
 
     local rateEB = CreateFrame("EditBox", "AV_SellRateEB", p, "InputBoxTemplate")
     rateEB:SetSize(50, 20)
@@ -208,6 +208,10 @@ function(p)
         self:ClearFocus()
     end)
     p.batchEB = batchEB
+
+    local warning = p:CreateFontString(nil, "OVERLAY", "GameFontRedSmall")
+    warning:SetPoint("TOPLEFT", batchLabel, "BOTTOMLEFT", 0, -10)
+    warning:SetText("Warning: High Rate + High Batch Size may cause disconnects!")
 end,
 function(p)
     -- Refresh
