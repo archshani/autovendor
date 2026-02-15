@@ -13,6 +13,7 @@ local defaults = {
     sellGreens = true,
     sellBlues = true,
     sellRate = 33,
+    sellBatchSize = 1,
     exceptions = {},
     stats = {
         totalGold = 0,
@@ -58,6 +59,9 @@ InitializeSettings()
 local function GetIDFromLink(link)
     if not link then return nil end
     local idString = link:match("|Hitem:(%d+):")
+    if not idString then
+        idString = link:match("^(%d+)$")
+    end
     return idString and tonumber(idString)
 end
 
@@ -163,9 +167,40 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
             end
         end
 
+    elseif cmd == "add" then
+        local itemID = GetIDFromLink(arg1)
+        if itemID then
+            if not AutoVendorSettings.exceptions then AutoVendorSettings.exceptions = {} end
+            AutoVendorSettings.exceptions[itemID] = true
+            print("|cff00ff00AutoVendor:|r Added " .. arg1 .. " to exception list.")
+            if AutoVendorUI and AutoVendorUI.frame:IsShown() and AutoVendorUI.pages[2] and AutoVendorUI.pages[2]:IsShown() then
+                AutoVendorUI:SetTab(2)
+            end
+        else
+            print("|cffff0000Error:|r Please link an item or provide an Item ID. Example: /av add [Item Link]")
+        end
+
+    elseif cmd == "remove" then
+        local itemID = GetIDFromLink(arg1)
+        if itemID then
+            if AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
+                AutoVendorSettings.exceptions[itemID] = nil
+                print("|cff00ff00AutoVendor:|r Removed " .. arg1 .. " from exception list.")
+                if AutoVendorUI and AutoVendorUI.frame:IsShown() and AutoVendorUI.pages[2] and AutoVendorUI.pages[2]:IsShown() then
+                    AutoVendorUI:SetTab(2)
+                end
+            else
+                print("|cffff0000Error:|r Item not in exception list.")
+            end
+        else
+            print("|cffff0000Error:|r Please link an item or provide an Item ID. Example: /av remove [Item Link]")
+        end
+
     else
         print("|cffffff00AutoVendor usage:|r")
         print("  /av - Toggle UI")
+        print("  /av add [item] - Add item to exceptions")
+        print("  /av remove [item] - Remove item from exceptions")
         print("  /av stats - Show lifetime statistics")
         print("  /av gph [start|pause|stop] - Track Gold Per Hour")
     end
@@ -187,25 +222,24 @@ local function OnUpdate(self, elapsed)
     end
 
     local rate = AutoVendorSettings.sellRate or 33
+    local batchSize = AutoVendorSettings.sellBatchSize or 1
     local interval = 1 / rate
     sellTimer = sellTimer + elapsed
 
-    if sellTimer >= interval then
+    local processedThisFrame = 0
+    while sellTimer >= interval and #sellQueue > 0 and processedThisFrame < batchSize do
         local item = sellQueue[1] -- Peek at the first item
-        if not item then
-            table.remove(sellQueue, 1)
-            return
-        end
-
         local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
+        
         if locked then
             -- Item is locked, wait for next OnUpdate tick to try again
             return
         end
 
-        -- Safe to process, so remove from queue and reset timer
+        -- Safe to process, so remove from queue and decrement timer
         table.remove(sellQueue, 1)
-        sellTimer = 0
+        sellTimer = sellTimer - interval
+        processedThisFrame = processedThisFrame + 1
 
         local link = GetContainerItemLink(item.bag, item.slot)
         if link then
@@ -262,12 +296,13 @@ function ContainerFrameItemButton_OnModifiedClick(self, button)
             if not AutoVendorSettings.exceptions[itemID] then
                 AutoVendorSettings.exceptions[itemID] = true
                 print("|cff00ff00AutoVendor:|r Added " .. (link or "item") .. " to exception list.")
-                -- Refresh UI if it's shown and on Items tab
-                if AutoVendorUI and AutoVendorUI.frame:IsShown() and AutoVendorUI.pages[2] and AutoVendorUI.pages[2]:IsShown() then
-                    AutoVendorUI:SetTab(2)
-                end
             else
-                print("|cff00ff00AutoVendor:|r Item is already in exception list.")
+                AutoVendorSettings.exceptions[itemID] = nil
+                print("|cff00ff00AutoVendor:|r Removed " .. (link or "item") .. " from exception list.")
+            end
+            -- Refresh UI if it's shown and on Items tab
+            if AutoVendorUI and AutoVendorUI.frame:IsShown() and AutoVendorUI.pages[2] and AutoVendorUI.pages[2]:IsShown() then
+                AutoVendorUI:SetTab(2)
             end
         end
         return
