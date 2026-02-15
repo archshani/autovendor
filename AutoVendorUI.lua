@@ -109,7 +109,7 @@ function(p)
 /av gph [start|pause|stop] - Track Gold Per Hour
 
 |cff00ff00Shortcuts:|r
-|cff00ff00Alt + Right Click|r on an item in your bags to toggle it in the exception list.
+|cff00ff00Ctrl + Right Click|r on an item in your bags to toggle it in the exception list.
 
 |cff00ff00Settings:|r
 - |cff00ff00Sell Rate:|r How many items to sell per second.
@@ -270,7 +270,7 @@ function(p)
     -- Build
     local help = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     help:SetPoint("TOPLEFT", 10, 0)
-    help:SetText("Ignored items (will not be sold).\n|cff00ff00Alt + Right Click|r items in bags to add.")
+    help:SetText("Ignored items (will not be sold).\n|cff00ff00Ctrl + Right Click|r items in bags to add.")
 
     local sf = CreateFrame("ScrollFrame", "AV_ItemsScrollFrame", p, "UIPanelScrollFrameTemplate")
     sf:SetPoint("TOPLEFT", 10, -35)

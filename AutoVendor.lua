@@ -282,10 +282,10 @@ local function OnUpdate(self, elapsed)
     end
 end
 
--- 6. Hook for Alt+Right Click to add to exceptions
+-- 6. Hook for Ctrl+Right Click to add to exceptions
 local old_ContainerFrameItemButton_OnModifiedClick = ContainerFrameItemButton_OnModifiedClick
 function ContainerFrameItemButton_OnModifiedClick(self, button)
-    if button == "RightButton" and IsAltKeyDown() then
+    if button == "RightButton" and IsControlKeyDown() then
         local bag = self:GetParent():GetID()
         local slot = self:GetID()
         local link = GetContainerItemLink(bag, slot)
