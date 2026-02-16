@@ -66,20 +66,25 @@ local function GetIDFromLink(link)
     return idString and tonumber(idString)
 end
 
-local scanner = CreateFrame("GameTooltip", "AVScanner", nil, "GameTooltipTemplate")
-scanner:SetOwner(WorldFrame, "ANCHOR_NONE")
+local scanner = CreateFrame("GameTooltip", "AVScanner", UIParent, "GameTooltipTemplate")
 
 local function IsSoulbound(bag, slot)
+    scanner:SetOwner(UIParent, "ANCHOR_NONE")
     scanner:ClearLines()
-    local hasItem = scanner:SetBagItem(bag, slot)
-    if not hasItem then return false end
+    scanner:SetBagItem(bag, slot)
 
     for i = 1, scanner:NumLines() do
         local line = _G["AVScannerTextLeft" .. i]
         if line then
             local text = line:GetText()
-            if text == ITEM_SOULBOUND or text == ITEM_BIND_ON_PICKUP then
-                return true
+            if text then
+                -- Standard soulbound and account bound strings
+                if text:find(ITEM_SOULBOUND, 1, true) or
+                   text:find(ITEM_BIND_ON_PICKUP, 1, true) or
+                   (ITEM_BIND_TO_ACCOUNT and text:find(ITEM_BIND_TO_ACCOUNT, 1, true)) or
+                   (ITEM_BIND_TO_BNETACCOUNT and text:find(ITEM_BIND_TO_BNETACCOUNT, 1, true)) then
+                    return true
+                end
             end
         end
     end
