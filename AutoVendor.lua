@@ -12,8 +12,9 @@ local defaults = {
     sellWhites = false,
     sellGreens = true,
     sellBlues = true,
-    sellRate = 33,
-    sellBatchSize = 1,
+    ignoreSoulbound = true,
+    sellRate = 3,
+    sellBatchSize = 10,
     exceptions = {},
     stats = {
         totalGold = 0,
@@ -63,6 +64,26 @@ local function GetIDFromLink(link)
         idString = link:match("^(%d+)$")
     end
     return idString and tonumber(idString)
+end
+
+local scanner = CreateFrame("GameTooltip", "AVScanner", nil, "GameTooltipTemplate")
+scanner:SetOwner(WorldFrame, "ANCHOR_NONE")
+
+local function IsSoulbound(bag, slot)
+    scanner:ClearLines()
+    local hasItem = scanner:SetBagItem(bag, slot)
+    if not hasItem then return false end
+
+    for i = 1, scanner:NumLines() do
+        local line = _G["AVScannerTextLeft" .. i]
+        if line then
+            local text = line:GetText()
+            if text == ITEM_SOULBOUND or text == ITEM_BIND_ON_PICKUP then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 local function FormatMoney(amount)
@@ -221,8 +242,8 @@ local function OnUpdate(self, elapsed)
         return
     end
 
-    local rate = AutoVendorSettings.sellRate or 33
-    local batchSize = AutoVendorSettings.sellBatchSize or 1
+    local rate = AutoVendorSettings.sellRate or 3
+    local batchSize = AutoVendorSettings.sellBatchSize or 10
     local interval = 1 / rate
     sellTimer = sellTimer + elapsed
 
@@ -261,6 +282,10 @@ local function OnUpdate(self, elapsed)
                     elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
                     elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
                     end
+                end
+
+                if shouldSell and AutoVendorSettings.ignoreSoulbound and IsSoulbound(item.bag, item.slot) then
+                    shouldSell = false
                 end
 
                 if shouldSell and price and price > 0 then
@@ -348,6 +373,10 @@ frame:SetScript("OnEvent", function(self, event, arg1)
                             elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
                             elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
                             end
+                        end
+
+                        if shouldSell and AutoVendorSettings.ignoreSoulbound and IsSoulbound(bag, slot) then
+                            shouldSell = false
                         end
 
                         if not locked and shouldSell and price and price > 0 then
