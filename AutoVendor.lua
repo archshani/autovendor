@@ -12,8 +12,9 @@ local defaults = {
     sellWhites = false,
     sellGreens = true,
     sellBlues = true,
-    sellRate = 33,
-    sellBatchSize = 1,
+    ignoreSoulbound = true,
+    sellRate = 3,
+    sellBatchSize = 10,
     exceptions = {},
     stats = {
         totalGold = 0,
@@ -65,6 +66,26 @@ local function GetIDFromLink(link)
     return idString and tonumber(idString)
 end
 
+local scanner = CreateFrame("GameTooltip", "AVScanner", nil, "GameTooltipTemplate")
+scanner:SetOwner(WorldFrame, "ANCHOR_NONE")
+
+local function IsSoulbound(bag, slot)
+    scanner:ClearLines()
+    local hasItem = scanner:SetBagItem(bag, slot)
+    if not hasItem then return false end
+
+    for i = 1, scanner:NumLines() do
+        local line = _G["AVScannerTextLeft" .. i]
+        if line then
+            local text = line:GetText()
+            if text == ITEM_SOULBOUND or text == ITEM_BIND_ON_PICKUP then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function FormatMoney(amount)
     if not amount or amount == 0 then return "0g 0s 0c" end
     -- GetCoinTextureString is the standard Blizzard way to format money with icons
@@ -73,7 +94,7 @@ local function FormatMoney(amount)
     elseif GetCoinText then
         return GetCoinText(amount)
     end
-    
+
     -- Fallback manual formatting
     local gold = math.floor(amount / 10000)
     local silver = math.floor((amount % 10000) / 100)
@@ -119,10 +140,10 @@ function AutoVendorGPH:Stop()
     if totalElapsed > 0 then
         gph = (totalGained / totalElapsed) * 3600
     end
-    
-    print(string.format("|cff00ff00AutoVendor:|r You made %s in %d minutes with total %s per hour.", 
+
+    print(string.format("|cff00ff00AutoVendor:|r You made %s in %d minutes with total %s per hour.",
         FormatMoney(totalGained), math.floor(totalElapsed / 60), FormatMoney(gph)))
-    
+
     self.active = false
     self.paused = false
     self.elapsed = 0
@@ -143,7 +164,7 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
     end
 
     local cmd, arg1 = msg:match("^(%S*)%s*(.-)$")
-    
+
     if cmd == "stats" then
         local stats = AutoVendorSettings.stats or {}
         print("|cff00ff00AutoVendor Lifetime Statistics:|r")
@@ -221,18 +242,18 @@ local function OnUpdate(self, elapsed)
         return
     end
 
-    local rate = AutoVendorSettings.sellRate or 33
-    local batchSize = AutoVendorSettings.sellBatchSize or 1
+    local rate = AutoVendorSettings.sellRate or 3
+    local batchSize = AutoVendorSettings.sellBatchSize or 10
     local interval = 1 / rate
     sellTimer = sellTimer + elapsed
 
     while sellTimer >= interval and #sellQueue > 0 do
         sellTimer = sellTimer - interval
-        
+
         for i = 1, batchSize do
             local item = sellQueue[1]
             if not item then break end
-            
+
             local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
             if locked then
                 -- If item is locked, we stop this batch and wait for next frame
@@ -246,7 +267,7 @@ local function OnUpdate(self, elapsed)
             if link then
                 local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
                 local itemID = GetIDFromLink(link)
-                
+
                 if not count or count == 0 then count = 1 end
 
                 local isException = false
@@ -263,9 +284,13 @@ local function OnUpdate(self, elapsed)
                     end
                 end
 
+                if shouldSell and AutoVendorSettings.ignoreSoulbound and IsSoulbound(item.bag, item.slot) then
+                    shouldSell = false
+                end
+
                 if shouldSell and price and price > 0 then
                     UseContainerItem(item.bag, item.slot)
-                    
+
                     local itemProfit = (price * count)
                     itemsSoldCount = itemsSoldCount + count
                     totalProfit = totalProfit + itemProfit
@@ -348,6 +373,10 @@ frame:SetScript("OnEvent", function(self, event, arg1)
                             elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
                             elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
                             end
+                        end
+
+                        if shouldSell and AutoVendorSettings.ignoreSoulbound and IsSoulbound(bag, slot) then
+                            shouldSell = false
                         end
 
                         if not locked and shouldSell and price and price > 0 then

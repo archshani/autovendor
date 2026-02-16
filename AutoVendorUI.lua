@@ -112,6 +112,7 @@ function(p)
 |cff00ff00Ctrl + Right Click|r on an item in your bags to toggle it in the exception list.
 
 |cff00ff00Settings:|r
+- |cff00ff00Ignore Soulbound:|r Do not sell items that are soulbound to you.
 - |cff00ff00Sell Rate:|r Frequency of sales (batches per second).
 - |cff00ff00Batch Size:|r Number of items sold in each batch.
 ]])
@@ -160,10 +161,11 @@ function(p)
     p.sellWhites = CreateCheckButton("AV_SellWhites", "Sell Common (White) items", p.sellGreys, 0, -5, "sellWhites")
     p.sellGreens = CreateCheckButton("AV_SellGreens", "Sell Uncommon (Green) items", p.sellWhites, 0, -5, "sellGreens")
     p.sellBlues = CreateCheckButton("AV_SellBlues", "Sell Rare (Blue) items", p.sellGreens, 0, -5, "sellBlues")
+    p.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", p.sellBlues, 0, -5, "ignoreSoulbound")
 
     -- Sell Rate
     local rateLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    rateLabel:SetPoint("TOPLEFT", p.sellBlues, "BOTTOMLEFT", 0, -20)
+    rateLabel:SetPoint("TOPLEFT", p.ignoreSoulbound, "BOTTOMLEFT", 0, -20)
     rateLabel:SetText("Sell Rate (batches per second):")
 
     local rateEB = CreateFrame("EditBox", "AV_SellRateEB", p, "InputBoxTemplate")
@@ -172,15 +174,14 @@ function(p)
     rateEB:SetAutoFocus(false)
     rateEB:SetNumeric(true)
     rateEB:SetMaxLetters(4)
-    rateEB:SetScript("OnEnterPressed", function(self)
+    rateEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
         local val = tonumber(self:GetText())
         if val and val >= 1 and val <= 1000 then
             AutoVendorSettings.sellRate = val
-            print("|cff00ff00AutoVendor:|r Selling rate set to " .. val)
-        else
-            print("|cffff0000Error:|r Rate must be 1-1000")
-            self:SetText(AutoVendorSettings.sellRate or 33)
         end
+    end)
+    rateEB:SetScript("OnEnterPressed", function(self)
         self:ClearFocus()
     end)
     p.rateEB = rateEB
@@ -196,15 +197,14 @@ function(p)
     batchEB:SetAutoFocus(false)
     batchEB:SetNumeric(true)
     batchEB:SetMaxLetters(2)
-    batchEB:SetScript("OnEnterPressed", function(self)
+    batchEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
         local val = tonumber(self:GetText())
         if val and val >= 1 and val <= 33 then
             AutoVendorSettings.sellBatchSize = val
-            print("|cff00ff00AutoVendor:|r Batch size set to " .. val)
-        else
-            print("|cffff0000Error:|r Batch size must be 1-33")
-            self:SetText(AutoVendorSettings.sellBatchSize or 1)
         end
+    end)
+    batchEB:SetScript("OnEnterPressed", function(self)
         self:ClearFocus()
     end)
     p.batchEB = batchEB
@@ -219,8 +219,9 @@ function(p)
     p.sellWhites:SetChecked(AutoVendorSettings.sellWhites)
     p.sellGreens:SetChecked(AutoVendorSettings.sellGreens)
     p.sellBlues:SetChecked(AutoVendorSettings.sellBlues)
-    p.rateEB:SetText(AutoVendorSettings.sellRate or 33)
-    p.batchEB:SetText(AutoVendorSettings.sellBatchSize or 1)
+    p.ignoreSoulbound:SetChecked(AutoVendorSettings.ignoreSoulbound)
+    p.rateEB:SetText(AutoVendorSettings.sellRate or 3)
+    p.batchEB:SetText(AutoVendorSettings.sellBatchSize or 10)
 end)
 
 -------------------------------------------------
