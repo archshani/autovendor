@@ -13,6 +13,7 @@ local defaults = {
     sellGreens = true,
     sellBlues = true,
     ignoreSoulbound = true,
+    sellNewItems = true,
     sellRate = 3,
     sellBatchSize = 10,
     exceptions = {},
@@ -237,6 +238,57 @@ local sellQueue = {}
 local itemsSoldCount = 0
 local totalProfit = 0
 local sellTimer = 0
+local merchantOpen = false
+
+local function IsInQueue(bag, slot)
+    for _, item in ipairs(sellQueue) do
+        if item.bag == bag and item.slot == slot then
+            return true
+        end
+    end
+    return false
+end
+
+local function QueueEligibleItems()
+    local added = false
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        if slots > 0 then
+            for slot = 1, slots do
+                local link = GetContainerItemLink(bag, slot)
+                if link and not IsInQueue(bag, slot) then
+                    local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
+                    local itemID = GetIDFromLink(link)
+                    local _, _, locked = GetContainerItemInfo(bag, slot)
+
+                    local isException = false
+                    if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
+                        isException = true
+                    end
+
+                    local shouldSell = false
+                    if not isException then
+                        if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
+                        elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
+                        elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
+                        elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
+                        end
+                    end
+
+                    if shouldSell and AutoVendorSettings.ignoreSoulbound and IsSoulbound(bag, slot) then
+                        shouldSell = false
+                    end
+
+                    if not locked and shouldSell and price and price > 0 then
+                        table.insert(sellQueue, {bag = bag, slot = slot})
+                        added = true
+                    end
+                end
+            end
+        end
+    end
+    return added
+end
 
 local function OnUpdate(self, elapsed)
     if #sellQueue == 0 then
@@ -345,10 +397,12 @@ end
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
+frame:RegisterEvent("BAG_UPDATE_DELAYED")
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "AutoVendor" then
         InitializeSettings()
     elseif event == "MERCHANT_SHOW" then
+        merchantOpen = true
         if #sellQueue > 0 then return end
 
         sellQueue = {}
@@ -356,47 +410,20 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         totalProfit = 0
         sellTimer = 1 / AutoVendorSettings.sellRate
 
-        for bag = 0, 4 do
-            local slots = GetContainerNumSlots(bag)
-            if slots > 0 then
-                for slot = 1, slots do
-                    local link = GetContainerItemLink(bag, slot)
-                    if link then
-                        local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
-                        local itemID = GetIDFromLink(link)
-                        local _, _, locked = GetContainerItemInfo(bag, slot)
-
-                        local isException = false
-                        if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
-                            isException = true
-                        end
-
-                        local shouldSell = false
-                        if not isException then
-                            if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
-                            elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
-                            elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
-                            elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
-                            end
-                        end
-
-                        if shouldSell and AutoVendorSettings.ignoreSoulbound and IsSoulbound(bag, slot) then
-                            shouldSell = false
-                        end
-
-                        if not locked and shouldSell and price and price > 0 then
-                            table.insert(sellQueue, {bag = bag, slot = slot})
-                        end
-                    end
-                end
-            end
-        end
-
-        if #sellQueue > 0 then
+        if QueueEligibleItems() then
             self:SetScript("OnUpdate", OnUpdate)
         end
     elseif event == "MERCHANT_CLOSED" then
+        merchantOpen = false
         sellQueue = {}
         self:SetScript("OnUpdate", nil)
+    elseif event == "BAG_UPDATE_DELAYED" then
+        if merchantOpen and AutoVendorSettings.sellNewItems then
+            if QueueEligibleItems() then
+                if not self:GetScript("OnUpdate") then
+                    self:SetScript("OnUpdate", OnUpdate)
+                end
+            end
+        end
     end
 end)

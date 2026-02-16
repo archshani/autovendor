@@ -113,6 +113,7 @@ function(p)
 
 |cff00ff00Settings:|r
 - |cff00ff00Ignore Soulbound:|r Do not sell items that are soulbound to you.
+- |cff00ff00Sell New Items:|r Automatically sell items added to bags while at a vendor.
 - |cff00ff00Sell Rate:|r Frequency of sales (batches per second).
 - |cff00ff00Batch Size:|r Number of items sold in each batch.
 ]])
@@ -162,10 +163,11 @@ function(p)
     p.sellGreens = CreateCheckButton("AV_SellGreens", "Sell Uncommon (Green) items", p.sellWhites, 0, -5, "sellGreens")
     p.sellBlues = CreateCheckButton("AV_SellBlues", "Sell Rare (Blue) items", p.sellGreens, 0, -5, "sellBlues")
     p.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", p.sellBlues, 0, -5, "ignoreSoulbound")
+    p.sellNewItems = CreateCheckButton("AV_SellNewItems", "Sell new items while at vendor", p.ignoreSoulbound, 0, -5, "sellNewItems")
 
     -- Sell Rate
     local rateLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    rateLabel:SetPoint("TOPLEFT", p.ignoreSoulbound, "BOTTOMLEFT", 0, -20)
+    rateLabel:SetPoint("TOPLEFT", p.sellNewItems, "BOTTOMLEFT", 0, -20)
     rateLabel:SetText("Sell Rate (batches per second):")
 
     local rateEB = CreateFrame("EditBox", "AV_SellRateEB", p, "InputBoxTemplate")
@@ -220,6 +222,7 @@ function(p)
     p.sellGreens:SetChecked(AutoVendorSettings.sellGreens)
     p.sellBlues:SetChecked(AutoVendorSettings.sellBlues)
     p.ignoreSoulbound:SetChecked(AutoVendorSettings.ignoreSoulbound)
+    p.sellNewItems:SetChecked(AutoVendorSettings.sellNewItems)
     p.rateEB:SetText(AutoVendorSettings.sellRate or 3)
     p.batchEB:SetText(AutoVendorSettings.sellBatchSize or 10)
 end)
