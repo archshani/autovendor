@@ -418,13 +418,58 @@ function ContainerFrameItemButton_OnModifiedClick(self, button)
     old_ContainerFrameItemButton_OnModifiedClick(self, button)
 end
 
+-- 8. Version Check Logic
+local CURRENT_VERSION = GetAddOnMetadata("AutoVendor", "Version") or "1.1"
+local prefix = "AutoVendorVer"
+RegisterAddonMessagePrefix(prefix)
+
+local function CompareVersions(remote)
+    local v1 = {strsplit(".", CURRENT_VERSION)}
+    local v2 = {strsplit(".", remote)}
+    for i = 1, math.max(#v1, #v2) do
+        local n1 = tonumber(v1[i]) or 0
+        local n2 = tonumber(v2[i]) or 0
+        if n1 < n2 then return -1 end
+        if n1 > n2 then return 1 end
+    end
+    return 0
+end
+
+local hasWarned = false
+local function CheckVersion(remoteVersion)
+    if not remoteVersion or hasWarned then return end
+    if CompareVersions(remoteVersion) == -1 then
+        print("|cff00ff00AutoVendor:|r A new version (|cffff0000" .. remoteVersion .. "|r) is available! Please update.")
+        hasWarned = true
+    end
+end
+
+local function BroadcastVersion()
+    local channel = "GUILD"
+    if GetNumRaidMembers() > 0 then channel = "RAID"
+    elseif GetNumPartyMembers() > 0 then channel = "PARTY"
+    end
+    SendAddonMessage(prefix, CURRENT_VERSION, channel)
+end
+
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
 frame:RegisterEvent("BAG_UPDATE")
-frame:SetScript("OnEvent", function(self, event, arg1)
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("CHAT_MSG_ADDON")
+frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
     if event == "ADDON_LOADED" and arg1 == "AutoVendor" then
         InitializeSettings()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        BroadcastVersion()
+    elseif event == "PARTY_MEMBERS_CHANGED" then
+        BroadcastVersion()
+    elseif event == "CHAT_MSG_ADDON" and arg1 == prefix then
+        if arg2 and arg2 ~= CURRENT_VERSION then
+            CheckVersion(arg2)
+        end
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
     elseif event == "MERCHANT_SHOW" then
