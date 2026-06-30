@@ -16,7 +16,7 @@ local defaults = {
     useItemLevelFilter = false,
     maxItemLevel = 0,
     showBagWarning = false,
-    bagWarningThreshold = 20,
+    bagWarningThreshold = 15,
     ignoreSoulbound = true,
     sellRate = 3,
     sellBatchSize = 10,
@@ -94,18 +94,25 @@ local function CheckBagSpace()
     end
     
     local totalFree = 0
+    local totalSlots = 0
     for bag = 0, 4 do
         local freeSlots = GetContainerNumFreeSlots(bag)
+        local slots = GetContainerNumSlots(bag)
         if freeSlots then
             totalFree = totalFree + freeSlots
         end
+        if slots then
+            totalSlots = totalSlots + slots
+        end
     end
 
-    local threshold = AutoVendorSettings.bagWarningThreshold or 2
+    local thresholdPercent = AutoVendorSettings.bagWarningThreshold or 15
+    local threshold = math.floor((thresholdPercent / 100) * totalSlots)
+
     if totalFree == 0 then
         ShowAlert("BAGS ARE FULL!", true)
     elseif totalFree <= threshold then
-        ShowAlert("BAGS NEARLY FULL!", false)
+        ShowAlert(string.format("You have %d bag space remaining", totalFree), false)
     else
         alertFrame:Hide()
     end
