@@ -163,13 +163,39 @@ function(p)
     p.sellGreens = CreateCheckButton("AV_SellGreens", "Sell Uncommon (Green) items", p.sellWhites, 0, -5, "sellGreens")
     p.sellBlues = CreateCheckButton("AV_SellBlues", "Sell Rare (Blue) items", p.sellGreens, 0, -5, "sellBlues")
     p.sellEpics = CreateCheckButton("AV_SellEpics", "Sell Epic (Purple) items", p.sellBlues, 0, -5, "sellEpics")
-    p.showBigText = CreateCheckButton("AV_ShowBigText", "Show Sell Message (Big Red Text)", p.sellEpics, 0, -5, "showBigText")
-    p.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", p.showBigText, 0, -5, "ignoreSoulbound")
+    p.showBagWarning = CreateCheckButton("AV_ShowBagWarning", "Bag Nearly Full Warning", p.sellEpics, 0, -5, "showBagWarning")
+    p.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", p.showBagWarning, 0, -5, "ignoreSoulbound")
+
+    -- Bag Warning Threshold
+    local thresholdLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    thresholdLabel:SetPoint("TOPLEFT", p.ignoreSoulbound, "BOTTOMLEFT", 0, -15)
+    thresholdLabel:SetText("Warning Threshold (slots):")
+
+    local thresholdEB = CreateFrame("EditBox", "AV_BagThresholdEB", p, "InputBoxTemplate")
+    thresholdEB:SetSize(40, 20)
+    thresholdEB:SetPoint("LEFT", thresholdLabel, "RIGHT", 10, 0)
+    thresholdEB:SetAutoFocus(false)
+    thresholdEB:SetNumeric(true)
+    thresholdEB:SetMaxLetters(2)
+    thresholdEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = tonumber(self:GetText())
+        if val then
+            AutoVendorSettings.bagWarningThreshold = val
+        end
+    end)
+    thresholdEB:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+    end)
+    p.thresholdEB = thresholdEB
+
+    -- Item Level Filter Toggle
+    p.useItemLevelFilter = CreateCheckButton("AV_UseItemLevelFilter", "Use Item Level Filter", thresholdLabel, 0, -25, "useItemLevelFilter")
 
     -- Max Item Level
     local ilvlLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    ilvlLabel:SetPoint("TOPLEFT", p.ignoreSoulbound, "BOTTOMLEFT", 0, -15)
-    ilvlLabel:SetText("Max Item Level (0 to disable):")
+    ilvlLabel:SetPoint("TOPLEFT", p.useItemLevelFilter, "BOTTOMLEFT", 0, -10)
+    ilvlLabel:SetText("Max Item Level (Gear):")
 
     local ilvlEB = CreateFrame("EditBox", "AV_MaxItemLevelEB", p, "InputBoxTemplate")
     ilvlEB:SetSize(50, 20)
@@ -191,7 +217,7 @@ function(p)
 
     -- Sell Rate
     local rateLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    rateLabel:SetPoint("TOPLEFT", ilvlLabel, "BOTTOMLEFT", 0, -15)
+    rateLabel:SetPoint("TOPLEFT", ilvlLabel, "BOTTOMLEFT", 0, -25)
     rateLabel:SetText("Sell Rate (batches per second):")
 
     local rateEB = CreateFrame("EditBox", "AV_SellRateEB", p, "InputBoxTemplate")
@@ -246,8 +272,10 @@ function(p)
     p.sellGreens:SetChecked(AutoVendorSettings.sellGreens)
     p.sellBlues:SetChecked(AutoVendorSettings.sellBlues)
     p.sellEpics:SetChecked(AutoVendorSettings.sellEpics)
-    p.showBigText:SetChecked(AutoVendorSettings.showBigText)
+    p.showBagWarning:SetChecked(AutoVendorSettings.showBagWarning)
     p.ignoreSoulbound:SetChecked(AutoVendorSettings.ignoreSoulbound)
+    p.thresholdEB:SetText(AutoVendorSettings.bagWarningThreshold or 2)
+    p.useItemLevelFilter:SetChecked(AutoVendorSettings.useItemLevelFilter)
     p.ilvlEB:SetText(AutoVendorSettings.maxItemLevel or 0)
     p.rateEB:SetText(AutoVendorSettings.sellRate or 3)
     p.batchEB:SetText(AutoVendorSettings.sellBatchSize or 10)

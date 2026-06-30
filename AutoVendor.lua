@@ -13,8 +13,10 @@ local defaults = {
     sellGreens = true,
     sellBlues = true,
     sellEpics = false,
+    useItemLevelFilter = false,
     maxItemLevel = 0,
-    showBigText = false,
+    showBagWarning = false,
+    bagWarningThreshold = 2,
     ignoreSoulbound = true,
     sellRate = 3,
     sellBatchSize = 10,
@@ -69,11 +71,33 @@ alertFrame.text:SetAllPoints()
 alertFrame.text:SetTextColor(1, 0, 0) -- Red
 alertFrame:Hide()
 
+local lastBagWarning = 0
 local function ShowAlert(text)
-    if not AutoVendorSettings.showBigText then return end
+    if not AutoVendorSettings.showBagWarning then return end
     alertFrame.text:SetText(text)
     alertFrame:Show()
     UIFrameFadeOut(alertFrame, 3, 1, 0)
+end
+
+local function CheckBagSpace()
+    if not AutoVendorSettings.showBagWarning then return end
+
+    local totalFree = 0
+    for bag = 0, 4 do
+        -- In 3.3.5a GetContainerNumFreeSlots only returns freeSlots
+        local freeSlots = GetContainerNumFreeSlots(bag)
+        if freeSlots then
+            totalFree = totalFree + freeSlots
+        end
+    end
+
+    local threshold = AutoVendorSettings.bagWarningThreshold or 2
+    if totalFree <= threshold then
+        if GetTime() - lastBagWarning > 30 then -- Throttle 30s
+            ShowAlert("BAGS NEARLY FULL!")
+            lastBagWarning = GetTime()
+        end
+    end
 end
 
 -- 4. Helpers
@@ -265,7 +289,6 @@ local function OnUpdate(self, elapsed)
         if itemsSoldCount > 0 then
             local msg = string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit))
             print(msg)
-            ShowAlert(string.format("Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit)))
         end
         return
     end
@@ -314,10 +337,13 @@ local function OnUpdate(self, elapsed)
                 end
 
                 -- Item Level check
-                if shouldSell and AutoVendorSettings.maxItemLevel and AutoVendorSettings.maxItemLevel > 0 then
-                    local _, _, _, iLevel = GetItemInfo(link)
-                    if iLevel and iLevel > AutoVendorSettings.maxItemLevel then
-                        shouldSell = false
+                if shouldSell and AutoVendorSettings.useItemLevelFilter and AutoVendorSettings.maxItemLevel and AutoVendorSettings.maxItemLevel > 0 then
+                    local _, _, _, iLevel, _, itemType, _, _, _, _, _ = GetItemInfo(link)
+                    -- Armor and Weapon classes (using localized constants or English fallback)
+                    if itemType == "Armor" or itemType == "Weapon" or (itemType == (GetItemClassInfo and GetItemClassInfo(2))) or (itemType == (GetItemClassInfo and GetItemClassInfo(4))) then
+                        if iLevel and iLevel > AutoVendorSettings.maxItemLevel then
+                            shouldSell = false
+                        end
                     end
                 end
 
@@ -377,9 +403,12 @@ end
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
+frame:RegisterEvent("BAG_UPDATE")
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "AutoVendor" then
         InitializeSettings()
+    elseif event == "BAG_UPDATE" then
+        CheckBagSpace()
     elseif event == "MERCHANT_SHOW" then
         if #sellQueue > 0 then return end
 
@@ -414,10 +443,13 @@ frame:SetScript("OnEvent", function(self, event, arg1)
                         end
 
                         -- Item Level check
-                        if shouldSell and AutoVendorSettings.maxItemLevel and AutoVendorSettings.maxItemLevel > 0 then
-                            local _, _, _, iLevel = GetItemInfo(link)
-                            if iLevel and iLevel > AutoVendorSettings.maxItemLevel then
-                                shouldSell = false
+                        if shouldSell and AutoVendorSettings.useItemLevelFilter and AutoVendorSettings.maxItemLevel and AutoVendorSettings.maxItemLevel > 0 then
+                            local _, _, _, iLevel, _, itemType, _, _, _, _, _ = GetItemInfo(link)
+                            -- Armor and Weapon classes
+                            if itemType == "Armor" or itemType == "Weapon" or (itemType == (GetItemClassInfo and GetItemClassInfo(2))) or (itemType == (GetItemClassInfo and GetItemClassInfo(4))) then
+                                if iLevel and iLevel > AutoVendorSettings.maxItemLevel then
+                                    shouldSell = false
+                                end
                             end
                         end
 
