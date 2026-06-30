@@ -12,6 +12,11 @@ local defaults = {
     sellWhites = false,
     sellGreens = true,
     sellBlues = true,
+    sellEpics = false,
+    useItemLevelFilter = false,
+    maxItemLevel = 0,
+    showBagWarning = false,
+    bagWarningThreshold = 2,
     ignoreSoulbound = true,
     sellRate = 3,
     sellBatchSize = 10,
@@ -21,7 +26,8 @@ local defaults = {
         count0 = 0, -- Poor
         count1 = 0, -- Common
         count2 = 0, -- Uncommon
-        count3 = 0  -- Rare
+        count3 = 0, -- Rare
+        count4 = 0  -- Epic
     }
 }
 
@@ -56,7 +62,56 @@ end
 -- Initial call in case variables are already loaded (e.g. on /reload)
 InitializeSettings()
 
--- 3. Helpers
+-- 3. Alert Frame for Big Red Text
+local alertFrame = CreateFrame("Frame", nil, UIParent)
+alertFrame:SetSize(600, 100)
+alertFrame:SetPoint("CENTER", 0, 150)
+alertFrame.text = alertFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+alertFrame.text:SetAllPoints()
+alertFrame.text:SetTextColor(1, 0, 0) -- Red
+alertFrame:Hide()
+
+local function ShowAlert(text, isFull)
+    if not AutoVendorSettings.showBagWarning then 
+        alertFrame:Hide()
+        return 
+    end
+    
+    alertFrame.text:SetText(text)
+    if isFull then
+        alertFrame.text:SetFont("Fonts\\FRIZQT__.TTF", 42, "OUTLINE, MONOCHROME")
+    else
+        alertFrame.text:SetFont("Fonts\\FRIZQT__.TTF", 32, "OUTLINE, MONOCHROME")
+    end
+    alertFrame:SetAlpha(1)
+    alertFrame:Show()
+end
+
+local function CheckBagSpace()
+    if not AutoVendorSettings.showBagWarning then 
+        alertFrame:Hide()
+        return 
+    end
+    
+    local totalFree = 0
+    for bag = 0, 4 do
+        local freeSlots = GetContainerNumFreeSlots(bag)
+        if freeSlots then
+            totalFree = totalFree + freeSlots
+        end
+    end
+
+    local threshold = AutoVendorSettings.bagWarningThreshold or 2
+    if totalFree == 0 then
+        ShowAlert("BAGS ARE FULL!", true)
+    elseif totalFree <= threshold then
+        ShowAlert("BAGS NEARLY FULL!", false)
+    else
+        alertFrame:Hide()
+    end
+end
+
+-- 4. Helpers
 local function GetIDFromLink(link)
     if not link then return nil end
     local idString = link:match("|Hitem:(%d+):")
@@ -179,6 +234,7 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         print("    |cffffffffCommon (White):|r " .. (stats.count1 or 0))
         print("    |cff1eff00Uncommon (Green):|r " .. (stats.count2 or 0))
         print("    |cff0070ddRare (Blue):|r " .. (stats.count3 or 0))
+        print("    |cffa335eeEpic (Purple):|r " .. (stats.count4 or 0))
 
     elseif cmd == "gph" then
         if arg1 == "start" then
@@ -232,7 +288,7 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
     end
 end
 
--- 5. Vendor Logic (WotLK Compatible)
+-- 6. Vendor Logic (WotLK Compatible)
 local sellQueue = {}
 local itemsSoldCount = 0
 local totalProfit = 0
@@ -242,7 +298,8 @@ local function OnUpdate(self, elapsed)
     if #sellQueue == 0 then
         self:SetScript("OnUpdate", nil)
         if itemsSoldCount > 0 then
-            print(string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit)))
+            local msg = string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit))
+            print(msg)
         end
         return
     end
@@ -286,6 +343,18 @@ local function OnUpdate(self, elapsed)
                     elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
                     elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
                     elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
+                    elseif quality == 4 and AutoVendorSettings.sellEpics then shouldSell = true
+                    end
+                end
+
+                -- Item Level check
+                if shouldSell and AutoVendorSettings.useItemLevelFilter and AutoVendorSettings.maxItemLevel and AutoVendorSettings.maxItemLevel > 0 then
+                    local _, _, _, iLevel, _, itemType, _, _, _, _, _ = GetItemInfo(link)
+                    -- Armor and Weapon classes (using localized constants or English fallback)
+                    if itemType == "Armor" or itemType == "Weapon" or (itemType == (GetItemClassInfo and GetItemClassInfo(2))) or (itemType == (GetItemClassInfo and GetItemClassInfo(4))) then
+                        if iLevel and iLevel > AutoVendorSettings.maxItemLevel then
+                            shouldSell = false
+                        end
                     end
                 end
 
@@ -304,7 +373,7 @@ local function OnUpdate(self, elapsed)
                     if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
                     local s = AutoVendorSettings.stats
                     s.totalGold = (s.totalGold or 0) + itemProfit
-                    if quality and quality >= 0 and quality <= 3 then
+                    if quality and quality >= 0 and quality <= 4 then
                         local countKey = "count" .. quality
                         s[countKey] = (s[countKey] or 0) + count
                     end
@@ -314,7 +383,7 @@ local function OnUpdate(self, elapsed)
     end
 end
 
--- 6. Hook for Ctrl+Right Click to add to exceptions
+-- 7. Hook for Ctrl+Right Click to add to exceptions
 local old_ContainerFrameItemButton_OnModifiedClick = ContainerFrameItemButton_OnModifiedClick
 function ContainerFrameItemButton_OnModifiedClick(self, button)
     if button == "RightButton" and IsControlKeyDown() then
@@ -345,9 +414,12 @@ end
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
+frame:RegisterEvent("BAG_UPDATE")
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "AutoVendor" then
         InitializeSettings()
+    elseif event == "BAG_UPDATE" then
+        CheckBagSpace()
     elseif event == "MERCHANT_SHOW" then
         if #sellQueue > 0 then return end
 
@@ -377,6 +449,18 @@ frame:SetScript("OnEvent", function(self, event, arg1)
                             elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
                             elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
                             elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
+                            elseif quality == 4 and AutoVendorSettings.sellEpics then shouldSell = true
+                            end
+                        end
+
+                        -- Item Level check
+                        if shouldSell and AutoVendorSettings.useItemLevelFilter and AutoVendorSettings.maxItemLevel and AutoVendorSettings.maxItemLevel > 0 then
+                            local _, _, _, iLevel, _, itemType, _, _, _, _, _ = GetItemInfo(link)
+                            -- Armor and Weapon classes
+                            if itemType == "Armor" or itemType == "Weapon" or (itemType == (GetItemClassInfo and GetItemClassInfo(2))) or (itemType == (GetItemClassInfo and GetItemClassInfo(4))) then
+                                if iLevel and iLevel > AutoVendorSettings.maxItemLevel then
+                                    shouldSell = false
+                                end
                             end
                         end
 

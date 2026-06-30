@@ -113,6 +113,7 @@ function(p)
 
 |cff00ff00Settings:|r
 - |cff00ff00Ignore Soulbound:|r Do not sell items that are soulbound to you.
+- |cff00ff00Max Item Level:|r Do not sell gear above this item level.
 - |cff00ff00Sell Rate:|r Frequency of sales (batches per second).
 - |cff00ff00Batch Size:|r Number of items sold in each batch.
 ]])
@@ -143,12 +144,21 @@ end
 UI:RegisterTab(1, "Settings", 
 function(p)
     -- Build
-    local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOPLEFT", 10, 0)
+    local sf = CreateFrame("ScrollFrame", "AV_SettingsScrollFrame", p, "UIPanelScrollFrameTemplate")
+    sf:SetPoint("TOPLEFT", 10, 0)
+    sf:SetPoint("BOTTOMRIGHT", -30, 0)
+
+    local c = CreateFrame("Frame", nil, sf)
+    c:SetSize(310, 430) -- Height enough for all settings
+    sf:SetScrollChild(c)
+    p.content = c
+
+    local title = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 0, 0)
     title:SetText("Selling Settings")
 
     local function CreateCheckButton(name, label, relativeTo, x, y, settingKey)
-        local cb = CreateFrame("CheckButton", name, p, "UICheckButtonTemplate")
+        local cb = CreateFrame("CheckButton", name, c, "UICheckButtonTemplate")
         cb:SetPoint("TOPLEFT", relativeTo, "BOTTOMLEFT", x, y)
         _G[cb:GetName() .. "Text"]:SetText(label)
         cb:SetScript("OnClick", function(self)
@@ -157,18 +167,69 @@ function(p)
         return cb
     end
 
-    p.sellGreys = CreateCheckButton("AV_SellGreys", "Sell Poor (Grey) items", title, 0, -10, "sellGreys")
-    p.sellWhites = CreateCheckButton("AV_SellWhites", "Sell Common (White) items", p.sellGreys, 0, -5, "sellWhites")
-    p.sellGreens = CreateCheckButton("AV_SellGreens", "Sell Uncommon (Green) items", p.sellWhites, 0, -5, "sellGreens")
-    p.sellBlues = CreateCheckButton("AV_SellBlues", "Sell Rare (Blue) items", p.sellGreens, 0, -5, "sellBlues")
-    p.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", p.sellBlues, 0, -5, "ignoreSoulbound")
+    c.sellGreys = CreateCheckButton("AV_SellGreys", "Sell Poor (Grey) items", title, 0, -10, "sellGreys")
+    c.sellWhites = CreateCheckButton("AV_SellWhites", "Sell Common (White) items", c.sellGreys, 0, -5, "sellWhites")
+    c.sellGreens = CreateCheckButton("AV_SellGreens", "Sell Uncommon (Green) items", c.sellWhites, 0, -5, "sellGreens")
+    c.sellBlues = CreateCheckButton("AV_SellBlues", "Sell Rare (Blue) items", c.sellGreens, 0, -5, "sellBlues")
+    c.sellEpics = CreateCheckButton("AV_SellEpics", "Sell Epic (Purple) items", c.sellBlues, 0, -5, "sellEpics")
+    c.showBagWarning = CreateCheckButton("AV_ShowBagWarning", "Bag Nearly Full Warning", c.sellEpics, 0, -5, "showBagWarning")
+    c.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", c.showBagWarning, 0, -5, "ignoreSoulbound")
+
+    -- Bag Warning Threshold
+    local thresholdLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    thresholdLabel:SetPoint("TOPLEFT", c.ignoreSoulbound, "BOTTOMLEFT", 0, -15)
+    thresholdLabel:SetText("Warning Threshold (slots):")
+
+    local thresholdEB = CreateFrame("EditBox", "AV_BagThresholdEB", c, "InputBoxTemplate")
+    thresholdEB:SetSize(40, 20)
+    thresholdEB:SetPoint("LEFT", thresholdLabel, "RIGHT", 10, 0)
+    thresholdEB:SetAutoFocus(false)
+    thresholdEB:SetNumeric(true)
+    thresholdEB:SetMaxLetters(2)
+    thresholdEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = tonumber(self:GetText())
+        if val then
+            AutoVendorSettings.bagWarningThreshold = val
+        end
+    end)
+    thresholdEB:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+    end)
+    c.thresholdEB = thresholdEB
+
+    -- Item Level Filter Toggle
+    c.useItemLevelFilter = CreateCheckButton("AV_UseItemLevelFilter", "Use Item Level Filter", thresholdLabel, 0, -25, "useItemLevelFilter")
+
+    -- Max Item Level
+    local ilvlLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    ilvlLabel:SetPoint("TOPLEFT", c.useItemLevelFilter, "BOTTOMLEFT", 0, -10)
+    ilvlLabel:SetText("Max Item Level (Gear):")
+
+    local ilvlEB = CreateFrame("EditBox", "AV_MaxItemLevelEB", c, "InputBoxTemplate")
+    ilvlEB:SetSize(50, 20)
+    ilvlEB:SetPoint("LEFT", ilvlLabel, "RIGHT", 10, 0)
+    ilvlEB:SetAutoFocus(false)
+    ilvlEB:SetNumeric(true)
+    ilvlEB:SetMaxLetters(3)
+    ilvlEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = tonumber(self:GetText())
+        if val then
+            AutoVendorSettings.maxItemLevel = val
+        end
+    end)
+    ilvlEB:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+    end)
+    c.ilvlEB = ilvlEB
 
     -- Sell Rate
-    local rateLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    rateLabel:SetPoint("TOPLEFT", p.ignoreSoulbound, "BOTTOMLEFT", 0, -20)
+    local rateLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rateLabel:SetPoint("TOPLEFT", ilvlLabel, "BOTTOMLEFT", 0, -25)
     rateLabel:SetText("Sell Rate (batches per second):")
 
-    local rateEB = CreateFrame("EditBox", "AV_SellRateEB", p, "InputBoxTemplate")
+    local rateEB = CreateFrame("EditBox", "AV_SellRateEB", c, "InputBoxTemplate")
     rateEB:SetSize(50, 20)
     rateEB:SetPoint("LEFT", rateLabel, "RIGHT", 10, 0)
     rateEB:SetAutoFocus(false)
@@ -184,14 +245,14 @@ function(p)
     rateEB:SetScript("OnEnterPressed", function(self)
         self:ClearFocus()
     end)
-    p.rateEB = rateEB
+    c.rateEB = rateEB
 
     -- Batch Size
-    local batchLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local batchLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     batchLabel:SetPoint("TOPLEFT", rateLabel, "BOTTOMLEFT", 0, -20)
     batchLabel:SetText("Batch Size (items per tick):")
 
-    local batchEB = CreateFrame("EditBox", "AV_BatchSizeEB", p, "InputBoxTemplate")
+    local batchEB = CreateFrame("EditBox", "AV_BatchSizeEB", c, "InputBoxTemplate")
     batchEB:SetSize(50, 20)
     batchEB:SetPoint("LEFT", batchLabel, "RIGHT", 10, 0)
     batchEB:SetAutoFocus(false)
@@ -207,21 +268,28 @@ function(p)
     batchEB:SetScript("OnEnterPressed", function(self)
         self:ClearFocus()
     end)
-    p.batchEB = batchEB
+    c.batchEB = batchEB
 
-    local warning = p:CreateFontString(nil, "OVERLAY", "GameFontRedSmall")
+    local warning = c:CreateFontString(nil, "OVERLAY", "GameFontRedSmall")
     warning:SetPoint("TOPLEFT", batchLabel, "BOTTOMLEFT", 0, -10)
     warning:SetText("Warning: High Rate + High Batch Size may cause disconnects!")
 end,
 function(p)
     -- Refresh
-    p.sellGreys:SetChecked(AutoVendorSettings.sellGreys)
-    p.sellWhites:SetChecked(AutoVendorSettings.sellWhites)
-    p.sellGreens:SetChecked(AutoVendorSettings.sellGreens)
-    p.sellBlues:SetChecked(AutoVendorSettings.sellBlues)
-    p.ignoreSoulbound:SetChecked(AutoVendorSettings.ignoreSoulbound)
-    p.rateEB:SetText(AutoVendorSettings.sellRate or 3)
-    p.batchEB:SetText(AutoVendorSettings.sellBatchSize or 10)
+    local c = p.content
+    if not c then return end
+    c.sellGreys:SetChecked(AutoVendorSettings.sellGreys)
+    c.sellWhites:SetChecked(AutoVendorSettings.sellWhites)
+    c.sellGreens:SetChecked(AutoVendorSettings.sellGreens)
+    c.sellBlues:SetChecked(AutoVendorSettings.sellBlues)
+    c.sellEpics:SetChecked(AutoVendorSettings.sellEpics)
+    c.showBagWarning:SetChecked(AutoVendorSettings.showBagWarning)
+    c.ignoreSoulbound:SetChecked(AutoVendorSettings.ignoreSoulbound)
+    c.thresholdEB:SetText(AutoVendorSettings.bagWarningThreshold or 2)
+    c.useItemLevelFilter:SetChecked(AutoVendorSettings.useItemLevelFilter)
+    c.ilvlEB:SetText(AutoVendorSettings.maxItemLevel or 0)
+    c.rateEB:SetText(AutoVendorSettings.sellRate or 3)
+    c.batchEB:SetText(AutoVendorSettings.sellBatchSize or 10)
 end)
 
 -------------------------------------------------
@@ -314,6 +382,9 @@ function(p)
 
     p.count3 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     p.count3:SetPoint("TOPLEFT", 10, -100)
+
+    p.count4 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    p.count4:SetPoint("TOPLEFT", 10, -120)
     
     local resetBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     resetBtn:SetSize(100, 22)
@@ -325,7 +396,8 @@ function(p)
             count0 = 0,
             count1 = 0,
             count2 = 0,
-            count3 = 0
+            count3 = 0,
+            count4 = 0
         }
         UI:SetTab(3)
     end)
@@ -338,6 +410,7 @@ function(p)
     p.count1:SetText("|cffffffffCommon (White):|r " .. (s.count1 or 0))
     p.count2:SetText("|cff1eff00Uncommon (Green):|r " .. (s.count2 or 0))
     p.count3:SetText("|cff0070ddRare (Blue):|r " .. (s.count3 or 0))
+    p.count4:SetText("|cffa335eeEpic (Purple):|r " .. (s.count4 or 0))
 end)
 
 -------------------------------------------------
