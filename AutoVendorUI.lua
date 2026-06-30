@@ -113,6 +113,7 @@ function(p)
 
 |cff00ff00Settings:|r
 - |cff00ff00Ignore Soulbound:|r Do not sell items that are soulbound to you.
+- |cff00ff00Max Item Level:|r Do not sell gear above this item level.
 - |cff00ff00Sell Rate:|r Frequency of sales (batches per second).
 - |cff00ff00Batch Size:|r Number of items sold in each batch.
 ]])
@@ -124,7 +125,7 @@ UI.tabButtons = {}
 local function BuildTabButtons()
     local ids = {1, 2, 3, 4} -- Settings, Items, Stats, Info
     local names = {"Settings", "Items", "Stats", "Info"}
-    
+
     for i, id in ipairs(ids) do
         local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         b:SetSize(80, 24)
@@ -140,7 +141,7 @@ end
 -------------------------------------------------
 -- SETTINGS TAB
 -------------------------------------------------
-UI:RegisterTab(1, "Settings", 
+UI:RegisterTab(1, "Settings",
 function(p)
     -- Build
     local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -161,11 +162,36 @@ function(p)
     p.sellWhites = CreateCheckButton("AV_SellWhites", "Sell Common (White) items", p.sellGreys, 0, -5, "sellWhites")
     p.sellGreens = CreateCheckButton("AV_SellGreens", "Sell Uncommon (Green) items", p.sellWhites, 0, -5, "sellGreens")
     p.sellBlues = CreateCheckButton("AV_SellBlues", "Sell Rare (Blue) items", p.sellGreens, 0, -5, "sellBlues")
-    p.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", p.sellBlues, 0, -5, "ignoreSoulbound")
+    p.sellEpics = CreateCheckButton("AV_SellEpics", "Sell Epic (Purple) items", p.sellBlues, 0, -5, "sellEpics")
+    p.showBigText = CreateCheckButton("AV_ShowBigText", "Show Sell Message (Big Red Text)", p.sellEpics, 0, -5, "showBigText")
+    p.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", p.showBigText, 0, -5, "ignoreSoulbound")
+
+    -- Max Item Level
+    local ilvlLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    ilvlLabel:SetPoint("TOPLEFT", p.ignoreSoulbound, "BOTTOMLEFT", 0, -15)
+    ilvlLabel:SetText("Max Item Level (0 to disable):")
+
+    local ilvlEB = CreateFrame("EditBox", "AV_MaxItemLevelEB", p, "InputBoxTemplate")
+    ilvlEB:SetSize(50, 20)
+    ilvlEB:SetPoint("LEFT", ilvlLabel, "RIGHT", 10, 0)
+    ilvlEB:SetAutoFocus(false)
+    ilvlEB:SetNumeric(true)
+    ilvlEB:SetMaxLetters(3)
+    ilvlEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = tonumber(self:GetText())
+        if val then
+            AutoVendorSettings.maxItemLevel = val
+        end
+    end)
+    ilvlEB:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+    end)
+    p.ilvlEB = ilvlEB
 
     -- Sell Rate
     local rateLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    rateLabel:SetPoint("TOPLEFT", p.ignoreSoulbound, "BOTTOMLEFT", 0, -20)
+    rateLabel:SetPoint("TOPLEFT", ilvlLabel, "BOTTOMLEFT", 0, -15)
     rateLabel:SetText("Sell Rate (batches per second):")
 
     local rateEB = CreateFrame("EditBox", "AV_SellRateEB", p, "InputBoxTemplate")
@@ -219,7 +245,10 @@ function(p)
     p.sellWhites:SetChecked(AutoVendorSettings.sellWhites)
     p.sellGreens:SetChecked(AutoVendorSettings.sellGreens)
     p.sellBlues:SetChecked(AutoVendorSettings.sellBlues)
+    p.sellEpics:SetChecked(AutoVendorSettings.sellEpics)
+    p.showBigText:SetChecked(AutoVendorSettings.showBigText)
     p.ignoreSoulbound:SetChecked(AutoVendorSettings.ignoreSoulbound)
+    p.ilvlEB:SetText(AutoVendorSettings.maxItemLevel or 0)
     p.rateEB:SetText(AutoVendorSettings.sellRate or 3)
     p.batchEB:SetText(AutoVendorSettings.sellBatchSize or 10)
 end)
@@ -245,26 +274,26 @@ local function Items_Refresh(p)
             r = CreateFrame("Frame", nil, p.content)
             r:SetSize(320, rowHeight)
             r:SetPoint("TOPLEFT", 0, -(i-1)*rowHeight)
-            
+
             r.text = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.text:SetPoint("LEFT", 5, 0)
-            
+
             r.remove = CreateFrame("Button", nil, r, "UIPanelCloseButton")
             r.remove:SetPoint("RIGHT", -5, 0)
             r.remove:SetScale(0.7)
-            
+
             p.rows[i] = r
         end
         r:SetPoint("TOPLEFT", 0, -(i-1)*rowHeight)
-        
+
         local name, link = GetItemInfo(id)
         r.text:SetText(link or name or ("Item ID: " .. id))
-        
+
         r.remove:SetScript("OnClick", function()
             AutoVendorSettings.exceptions[id] = nil
             Items_Refresh(p)
         end)
-        
+
         r:Show()
     end
     p.content:SetHeight(math.max(#list * rowHeight, 1))
@@ -305,7 +334,7 @@ function(p)
 
     p.count0 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     p.count0:SetPoint("TOPLEFT", 10, -40)
-    
+
     p.count1 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     p.count1:SetPoint("TOPLEFT", 10, -60)
 
@@ -314,7 +343,10 @@ function(p)
 
     p.count3 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     p.count3:SetPoint("TOPLEFT", 10, -100)
-    
+
+    p.count4 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    p.count4:SetPoint("TOPLEFT", 10, -120)
+
     local resetBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     resetBtn:SetSize(100, 22)
     resetBtn:SetPoint("BOTTOMLEFT", 10, 10)
@@ -325,7 +357,8 @@ function(p)
             count0 = 0,
             count1 = 0,
             count2 = 0,
-            count3 = 0
+            count3 = 0,
+            count4 = 0
         }
         UI:SetTab(3)
     end)
@@ -338,6 +371,7 @@ function(p)
     p.count1:SetText("|cffffffffCommon (White):|r " .. (s.count1 or 0))
     p.count2:SetText("|cff1eff00Uncommon (Green):|r " .. (s.count2 or 0))
     p.count3:SetText("|cff0070ddRare (Blue):|r " .. (s.count3 or 0))
+    p.count4:SetText("|cffa335eeEpic (Purple):|r " .. (s.count4 or 0))
 end)
 
 -------------------------------------------------
@@ -400,7 +434,7 @@ local function UpdateGPHDisplay()
     local s = elapsed % 60
     timeValue:SetText(string.format("%02d:%02d:%02d", h, m, s))
     goldValue:SetText(FormatMoneyGPH(data.goldGained))
-    
+
     local gphVal = 0
     if elapsed > 0 then
         gphVal = (data.goldGained / elapsed) * 3600
