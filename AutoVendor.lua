@@ -71,20 +71,30 @@ alertFrame.text:SetAllPoints()
 alertFrame.text:SetTextColor(1, 0, 0) -- Red
 alertFrame:Hide()
 
-local lastBagWarning = 0
-local function ShowAlert(text)
-    if not AutoVendorSettings.showBagWarning then return end
+local function ShowAlert(text, isFull)
+    if not AutoVendorSettings.showBagWarning then
+        alertFrame:Hide()
+        return
+    end
+
     alertFrame.text:SetText(text)
+    if isFull then
+        alertFrame.text:SetFont("Fonts\\FRIZQT__.TTF", 42, "OUTLINE, MONOCHROME")
+    else
+        alertFrame.text:SetFont("Fonts\\FRIZQT__.TTF", 32, "OUTLINE, MONOCHROME")
+    end
+    alertFrame:SetAlpha(1)
     alertFrame:Show()
-    UIFrameFadeOut(alertFrame, 3, 1, 0)
 end
 
 local function CheckBagSpace()
-    if not AutoVendorSettings.showBagWarning then return end
+    if not AutoVendorSettings.showBagWarning then
+        alertFrame:Hide()
+        return
+    end
 
     local totalFree = 0
     for bag = 0, 4 do
-        -- In 3.3.5a GetContainerNumFreeSlots only returns freeSlots
         local freeSlots = GetContainerNumFreeSlots(bag)
         if freeSlots then
             totalFree = totalFree + freeSlots
@@ -92,11 +102,12 @@ local function CheckBagSpace()
     end
 
     local threshold = AutoVendorSettings.bagWarningThreshold or 2
-    if totalFree <= threshold then
-        if GetTime() - lastBagWarning > 30 then -- Throttle 30s
-            ShowAlert("BAGS NEARLY FULL!")
-            lastBagWarning = GetTime()
-        end
+    if totalFree == 0 then
+        ShowAlert("BAGS ARE FULL!", true)
+    elseif totalFree <= threshold then
+        ShowAlert("BAGS NEARLY FULL!", false)
+    else
+        alertFrame:Hide()
     end
 end
 
