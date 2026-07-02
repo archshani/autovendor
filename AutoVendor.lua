@@ -78,12 +78,12 @@ targetBtn:SetSize(200, 50)
 targetBtn:SetPoint("CENTER", 0, 50)
 targetBtn:SetText("Target Goblin Merchant")
 targetBtn:SetAttribute("type", "macro")
-targetBtn:SetAttribute("macrotext", "/tar goblin merchant")
+targetBtn:SetAttribute("macrotext", "/cleartarget\n/tar goblin merchant")
 targetBtn:Hide()
 
--- Since we can't hide secure frames in combat or via script easily while they are being clicked,
--- we'll use a trick: it hides itself OnClick (not protected if not in combat)
-targetBtn:SetScript("OnClick", function(self)
+-- PostClick doesn't interfere with the secure action
+targetBtn:SetScript("PostClick", function(self)
+    print("|cff00ff00AutoVendor:|r Targeting button clicked.")
     if not InCombatLockdown() then
         self:Hide()
     end
