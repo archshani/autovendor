@@ -7,7 +7,7 @@ local frame = CreateFrame("Frame")
 print("|cff00ff00AutoVendor (WotLK) Loaded Successfully.|r")
 
 -- 2. Settings Initialization
-local VERSION = "1.2"
+local VERSION = GetAddOnMetadata("AutoVendor", "Version") or "1.2"
 local GITHUB_URL = "https://github.com/User/AutoVendor"
 
 local defaults = {
@@ -47,6 +47,39 @@ local function UpdateTargetBind()
     end
     if AutoVendorSettings.interactKey and AutoVendorSettings.interactKey ~= "" then
         SetOverrideBinding(frame, true, AutoVendorSettings.interactKey, "INTERACTTARGET")
+    end
+end
+
+local function VersionToNumber(v)
+    if not v then return 0 end
+    local parts = {strsplit(".", v)}
+    local num = 0
+    for i = 1, 3 do
+        local part = parts[i]
+        num = num + (tonumber(part) or 0) * math.pow(100, 3 - i)
+    end
+    return num
+end
+
+local lastNotifiedVersion = VERSION
+local function CheckVersion(newVer)
+    if VersionToNumber(newVer) > VersionToNumber(lastNotifiedVersion) then
+        print("|cff00ff00AutoVendor:|r A newer version (" .. newVer .. ") is available! Download it at: " .. GITHUB_URL)
+        lastNotifiedVersion = newVer
+        return true
+    end
+    return false
+end
+
+local function BroadcastVersion()
+    if not VERSION then return end
+    if IsInGuild() then
+        SendAddonMessage("AutoVendorVer", VERSION, "GUILD")
+    end
+    if GetNumRaidMembers() > 0 then
+        SendAddonMessage("AutoVendorVer", VERSION, "RAID")
+    elseif GetNumPartyMembers() > 0 then
+        SendAddonMessage("AutoVendorVer", VERSION, "PARTY")
     end
 end
 
@@ -594,15 +627,28 @@ function ContainerFrameItemButton_OnModifiedClick(self, button)
 end
 
 frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+frame:RegisterEvent("RAID_ROSTER_UPDATE")
+frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
 frame:RegisterEvent("BAG_UPDATE")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
-frame:SetScript("OnEvent", function(self, event, arg1)
+frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
     if event == "ADDON_LOADED" and arg1 == "AutoVendor" then
         InitializeSettings()
         _G.AutoVendor_UpdateTargetBind = UpdateTargetBind
+    elseif event == "PLAYER_LOGIN" then
+        RegisterAddonMessagePrefix("AutoVendorVer")
+        BroadcastVersion()
+    elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+        BroadcastVersion()
+    elseif event == "CHAT_MSG_ADDON" then
+        if arg1 == "AutoVendorVer" and arg4 ~= GetUnitName("player") then
+            CheckVersion(arg2)
+        end
     elseif event == "PLAYER_REGEN_ENABLED" then
         UpdateTargetBind()
         pendingTargetShow = false
