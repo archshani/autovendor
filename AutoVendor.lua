@@ -27,7 +27,7 @@ local defaults = {
     scavengerDelay = 5,
     debugMode = false,
     targetKey = "G",
-    interactKey = "H",
+    interactKey = "F",
     exceptions = {},
     stats = {
         totalGold = 0,
@@ -129,6 +129,7 @@ end
 
 local summonState = 0
 local summonTimer = 0
+local fullBagTimer = 0
 local wasFull = false
 local pendingTargetShow = false
 
@@ -161,19 +162,12 @@ local function CheckBagSpace()
         alertFrame:Hide()
     end
 
-    -- Summon Logic Trigger
+    -- Summon Logic Trigger (5-second rule)
     if AutoVendorSettings.autoSummon and totalFree == 0 then
-        if not wasFull and summonState == 0 then
-            summonState = 1
-            summonTimer = 0
-            frame:SetScript("OnUpdate", frame.AutoVendor_OnUpdate)
-            if AutoVendorSettings.debugMode then
-                print("|cff00ff00AutoVendor Debug:|r Bags are full! Starting summon sequence...")
-            end
-        end
         wasFull = true
     else
         wasFull = false
+        fullBagTimer = 0
     end
 end
 
@@ -412,6 +406,16 @@ local function SummonPet(name)
 end
 
 function frame:AutoVendor_OnUpdate(elapsed)
+    -- 0. Full Bag Timer Logic
+    if wasFull and summonState == 0 then
+        fullBagTimer = fullBagTimer + elapsed
+        if fullBagTimer >= 5 then
+            summonState = 1
+            summonTimer = 0
+            fullBagTimer = 0
+        end
+    end
+
     -- 1. Selling Logic
     if #sellQueue > 0 then
         local rate = AutoVendorSettings.sellRate or 3
@@ -500,6 +504,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
         summonTimer = summonTimer + elapsed
 
         if summonState == 1 then -- Initial delay before summon
+            ShowAlert("Goblin Merchant Summon.........", true)
             if summonTimer >= 1 then
                 local success, exactName = SummonPet("Goblin Merchant")
                 if success then
@@ -510,9 +515,11 @@ function frame:AutoVendor_OnUpdate(elapsed)
                     summonTimer = 0
                 else
                     summonState = 0
+                    CheckBagSpace() -- Reset alerts
                 end
             end
         elseif summonState == 2 then -- Delay before targeting
+            ShowAlert("Goblin Merchant Summon.........", true)
             if summonTimer >= 2 then
                 local tKey = AutoVendorSettings.targetKey or ""
                 local iKey = AutoVendorSettings.interactKey or ""
@@ -521,6 +528,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                 -- We no longer show the on-screen button, but the keybind is still active
                 summonState = 3
                 summonTimer = 0
+                CheckBagSpace() -- Re-check to show BAGS FULL or nothing
             end
         elseif summonState == 4 then -- Wait X seconds after interaction
             local delay = AutoVendorSettings.scavengerDelay or 5
@@ -537,7 +545,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
     end
 
     -- 3. Cleanup
-    if #sellQueue == 0 and summonState == 0 then
+    if #sellQueue == 0 and summonState == 0 and not wasFull then
         self:SetScript("OnUpdate", nil)
         if itemsSoldCount > 0 then
             local msg = string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit))
@@ -591,6 +599,9 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         pendingTargetShow = false
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
+        if wasFull and not frame:GetScript("OnUpdate") then
+            frame:SetScript("OnUpdate", frame.AutoVendor_OnUpdate)
+        end
     elseif event == "MERCHANT_SHOW" then
         -- Handle summoning state transition
         if summonState == 3 then

@@ -384,7 +384,7 @@ function(p)
     c.autoSummon:SetChecked(AutoVendorSettings.autoSummon)
     c.delayEB:SetText(AutoVendorSettings.scavengerDelay or 5)
     c.keyEB:SetText(AutoVendorSettings.targetKey or "G")
-    c.interactEB:SetText(AutoVendorSettings.interactKey or "H")
+    c.interactEB:SetText(AutoVendorSettings.interactKey or "F")
     c.debugMode:SetChecked(AutoVendorSettings.debugMode)
 
     local key = GetBindingKey("INTERACTTARGET")
