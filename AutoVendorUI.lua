@@ -107,6 +107,9 @@ function(p)
 /av remove [link] - Remove item from exceptions
 /av stats - Show lifetime statistics
 /av gph [start|pause|stop] - Track Gold Per Hour
+/av test - Test pet summon sequence
+/av debug - Toggle debug mode
+/av version - Show version info
 
 |cff00ff00Shortcuts:|r
 |cff00ff00Ctrl + Right Click|r on an item in your bags to toggle it in the exception list.
@@ -149,17 +152,17 @@ function(p)
     sf:SetPoint("BOTTOMRIGHT", -30, 0)
 
     local c = CreateFrame("Frame", nil, sf)
-    c:SetSize(310, 430) -- Height enough for all settings
+    c:SetSize(310, 650) -- Height enough for all settings
     sf:SetScrollChild(c)
     p.content = c
 
-    local title = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOPLEFT", 0, 0)
-    title:SetText("Selling Settings")
-
     local function CreateCheckButton(name, label, relativeTo, x, y, settingKey)
         local cb = CreateFrame("CheckButton", name, c, "UICheckButtonTemplate")
-        cb:SetPoint("TOPLEFT", relativeTo, "BOTTOMLEFT", x, y)
+        if type(relativeTo) == "string" then
+            cb:SetPoint("TOPLEFT", 0, y)
+        else
+            cb:SetPoint("TOPLEFT", relativeTo, "BOTTOMLEFT", x, y)
+        end
         _G[cb:GetName() .. "Text"]:SetText(label)
         cb:SetScript("OnClick", function(self)
             AutoVendorSettings[settingKey] = self:GetChecked() and true or false
@@ -167,42 +170,13 @@ function(p)
         return cb
     end
 
-    c.sellGreys = CreateCheckButton("AV_SellGreys", "Sell Poor (Grey) items", title, 0, -10, "sellGreys")
-    c.sellWhites = CreateCheckButton("AV_SellWhites", "Sell Common (White) items", c.sellGreys, 0, -5, "sellWhites")
-    c.sellGreens = CreateCheckButton("AV_SellGreens", "Sell Uncommon (Green) items", c.sellWhites, 0, -5, "sellGreens")
-    c.sellBlues = CreateCheckButton("AV_SellBlues", "Sell Rare (Blue) items", c.sellGreens, 0, -5, "sellBlues")
-    c.sellEpics = CreateCheckButton("AV_SellEpics", "Sell Epic (Purple) items", c.sellBlues, 0, -5, "sellEpics")
-    c.showBagWarning = CreateCheckButton("AV_ShowBagWarning", "Bag space warning", c.sellEpics, 0, -5, "showBagWarning")
+    -- 1. Item Level Filter (Top)
+    local filterTitle = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    filterTitle:SetPoint("TOPLEFT", 0, 0)
+    filterTitle:SetText("Item Level Filter")
 
-    -- Bag Warning Threshold (under the toggle)
-    local thresholdLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    thresholdLabel:SetPoint("TOPLEFT", c.showBagWarning, "BOTTOMLEFT", 10, -5)
-    thresholdLabel:SetText("Warning Threshold (%):")
+    c.useItemLevelFilter = CreateCheckButton("AV_UseItemLevelFilter", "Use Item Level Filter", filterTitle, 0, -5, "useItemLevelFilter")
 
-    local thresholdEB = CreateFrame("EditBox", "AV_BagThresholdEB", c, "InputBoxTemplate")
-    thresholdEB:SetSize(40, 20)
-    thresholdEB:SetPoint("LEFT", thresholdLabel, "RIGHT", 10, 0)
-    thresholdEB:SetAutoFocus(false)
-    thresholdEB:SetNumeric(true)
-    thresholdEB:SetMaxLetters(3)
-    thresholdEB:SetScript("OnTextChanged", function(self, userInput)
-        if not userInput then return end
-        local val = tonumber(self:GetText())
-        if val then
-            AutoVendorSettings.bagWarningThreshold = val
-        end
-    end)
-    thresholdEB:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-    end)
-    c.thresholdEB = thresholdEB
-
-    c.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", thresholdLabel, -10, -15, "ignoreSoulbound")
-
-    -- Item Level Filter Toggle
-    c.useItemLevelFilter = CreateCheckButton("AV_UseItemLevelFilter", "Use Item Level Filter", c.ignoreSoulbound, 0, -5, "useItemLevelFilter")
-
-    -- Max Item Level
     local ilvlLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     ilvlLabel:SetPoint("TOPLEFT", c.useItemLevelFilter, "BOTTOMLEFT", 10, -5)
     ilvlLabel:SetText("Max Item Level (Gear):")
@@ -220,18 +194,57 @@ function(p)
             AutoVendorSettings.maxItemLevel = val
         end
     end)
-    ilvlEB:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-    end)
+    ilvlEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     c.ilvlEB = ilvlEB
 
-    -- Sell Rate
+    -- 2. General Selling Settings
+    local sellingTitle = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    sellingTitle:SetPoint("TOPLEFT", ilvlLabel, "BOTTOMLEFT", -10, -20)
+    sellingTitle:SetText("General Selling")
+
+    c.sellGreys = CreateCheckButton("AV_SellGreys", "Sell Poor (Grey) items", sellingTitle, 0, -5, "sellGreys")
+    c.sellWhites = CreateCheckButton("AV_SellWhites", "Sell Common (White) items", c.sellGreys, 0, -5, "sellWhites")
+    c.sellGreens = CreateCheckButton("AV_SellGreens", "Sell Uncommon (Green) items", c.sellWhites, 0, -5, "sellGreens")
+    c.sellBlues = CreateCheckButton("AV_SellBlues", "Sell Rare (Blue) items", c.sellGreens, 0, -5, "sellBlues")
+    c.sellEpics = CreateCheckButton("AV_SellEpics", "Sell Epic (Purple) items", c.sellBlues, 0, -5, "sellEpics")
+    c.ignoreSoulbound = CreateCheckButton("AV_IgnoreSoulbound", "Ignore Soulbound items", c.sellEpics, 0, -5, "ignoreSoulbound")
+
+    -- 3. Warnings
+    local warningTitle = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    warningTitle:SetPoint("TOPLEFT", c.ignoreSoulbound, "BOTTOMLEFT", 0, -20)
+    warningTitle:SetText("Warnings & Stats")
+
+    c.showBagWarning = CreateCheckButton("AV_ShowBagWarning", "Bag space warning", warningTitle, 0, -5, "showBagWarning")
+    
+    local thresholdLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    thresholdLabel:SetPoint("TOPLEFT", c.showBagWarning, "BOTTOMLEFT", 10, -5)
+    thresholdLabel:SetText("Warning Threshold (%):")
+
+    local thresholdEB = CreateFrame("EditBox", "AV_BagThresholdEB", c, "InputBoxTemplate")
+    thresholdEB:SetSize(40, 20)
+    thresholdEB:SetPoint("LEFT", thresholdLabel, "RIGHT", 10, 0)
+    thresholdEB:SetAutoFocus(false)
+    thresholdEB:SetNumeric(true)
+    thresholdEB:SetMaxLetters(3)
+    thresholdEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = tonumber(self:GetText())
+        if val then AutoVendorSettings.bagWarningThreshold = val end
+    end)
+    thresholdEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    c.thresholdEB = thresholdEB
+
+    -- 4. Advanced (Rate & Batch)
+    local advTitle = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    advTitle:SetPoint("TOPLEFT", thresholdLabel, "BOTTOMLEFT", -10, -20)
+    advTitle:SetText("Performance")
+
     local rateLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    rateLabel:SetPoint("TOPLEFT", ilvlLabel, "BOTTOMLEFT", -10, -15)
-    rateLabel:SetText("Sell Rate (batches per second):")
+    rateLabel:SetPoint("TOPLEFT", advTitle, "BOTTOMLEFT", 0, -5)
+    rateLabel:SetText("Sell Rate (batches/sec):")
 
     local rateEB = CreateFrame("EditBox", "AV_SellRateEB", c, "InputBoxTemplate")
-    rateEB:SetSize(50, 20)
+    rateEB:SetSize(40, 20)
     rateEB:SetPoint("LEFT", rateLabel, "RIGHT", 10, 0)
     rateEB:SetAutoFocus(false)
     rateEB:SetNumeric(true)
@@ -239,22 +252,17 @@ function(p)
     rateEB:SetScript("OnTextChanged", function(self, userInput)
         if not userInput then return end
         local val = tonumber(self:GetText())
-        if val and val >= 1 and val <= 1000 then
-            AutoVendorSettings.sellRate = val
-        end
+        if val and val >= 1 and val <= 1000 then AutoVendorSettings.sellRate = val end
     end)
-    rateEB:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-    end)
+    rateEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     c.rateEB = rateEB
 
-    -- Batch Size
     local batchLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    batchLabel:SetPoint("TOPLEFT", rateLabel, "BOTTOMLEFT", 0, -20)
-    batchLabel:SetText("Batch Size (items per tick):")
+    batchLabel:SetPoint("TOPLEFT", rateLabel, "BOTTOMLEFT", 0, -10)
+    batchLabel:SetText("Batch Size (items/tick):")
 
     local batchEB = CreateFrame("EditBox", "AV_BatchSizeEB", c, "InputBoxTemplate")
-    batchEB:SetSize(50, 20)
+    batchEB:SetSize(40, 20)
     batchEB:SetPoint("LEFT", batchLabel, "RIGHT", 10, 0)
     batchEB:SetAutoFocus(false)
     batchEB:SetNumeric(true)
@@ -262,18 +270,100 @@ function(p)
     batchEB:SetScript("OnTextChanged", function(self, userInput)
         if not userInput then return end
         local val = tonumber(self:GetText())
-        if val and val >= 1 and val <= 33 then
-            AutoVendorSettings.sellBatchSize = val
-        end
+        if val and val >= 1 and val <= 33 then AutoVendorSettings.sellBatchSize = val end
     end)
-    batchEB:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-    end)
+    batchEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     c.batchEB = batchEB
 
-    local warning = c:CreateFontString(nil, "OVERLAY", "GameFontRedSmall")
-    warning:SetPoint("TOPLEFT", batchLabel, "BOTTOMLEFT", 0, -10)
-    warning:SetText("Warning: High Rate + High Batch Size may cause disconnects!")
+    -- 5. Pet Summoning
+    local petTitle = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    petTitle:SetPoint("TOPLEFT", batchLabel, "BOTTOMLEFT", 0, -30)
+    petTitle:SetText("Pet Summoning")
+
+    c.autoSummon = CreateCheckButton("AV_AutoSummon", "Summon Merchant when bags full", petTitle, 0, -5, "autoSummon")
+
+    local delayLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    delayLabel:SetPoint("TOPLEFT", c.autoSummon, "BOTTOMLEFT", 10, -5)
+    delayLabel:SetText("Scavenger Delay (sec):")
+
+    local delayEB = CreateFrame("EditBox", "AV_ScavengerDelayEB", c, "InputBoxTemplate")
+    delayEB:SetSize(40, 20)
+    delayEB:SetPoint("LEFT", delayLabel, "RIGHT", 10, 0)
+    delayEB:SetAutoFocus(false)
+    delayEB:SetNumeric(true)
+    delayEB:SetMaxLetters(2)
+    delayEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = tonumber(self:GetText())
+        if val then AutoVendorSettings.scavengerDelay = val end
+    end)
+    delayEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    c.delayEB = delayEB
+
+    -- Targeting Key
+    local keyLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    keyLabel:SetPoint("TOPLEFT", delayLabel, "BOTTOMLEFT", 0, -15)
+    keyLabel:SetText("Targeting Key:")
+
+    local keyEB = CreateFrame("EditBox", "AV_TargetKeyEB", c, "InputBoxTemplate")
+    keyEB:SetSize(40, 20)
+    keyEB:SetPoint("LEFT", keyLabel, "RIGHT", 10, 0)
+    keyEB:SetAutoFocus(false)
+    keyEB:SetMaxLetters(1)
+    keyEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = self:GetText():upper()
+        if val ~= "" then
+            AutoVendorSettings.targetKey = val
+            if _G.AutoVendor_UpdateTargetBind then
+                _G.AutoVendor_UpdateTargetBind()
+            end
+        end
+    end)
+    keyEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    c.keyEB = keyEB
+
+    -- Interact Key
+    local interactLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    interactLabel:SetPoint("TOPLEFT", keyLabel, "BOTTOMLEFT", 0, -15)
+    interactLabel:SetText("Interact Key:")
+
+    local interactEB = CreateFrame("EditBox", "AV_InteractKeyEB", c, "InputBoxTemplate")
+    interactEB:SetSize(40, 20)
+    interactEB:SetPoint("LEFT", interactLabel, "RIGHT", 10, 0)
+    interactEB:SetAutoFocus(false)
+    interactEB:SetMaxLetters(1)
+    interactEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = self:GetText():upper()
+        if val ~= "" then
+            AutoVendorSettings.interactKey = val
+            if _G.AutoVendor_UpdateTargetBind then
+                _G.AutoVendor_UpdateTargetBind()
+            end
+        end
+    end)
+    interactEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    c.interactEB = interactEB
+
+    local interactBtn = CreateFrame("Button", "AV_InteractBtn", c, "SecureActionButtonTemplate, UIPanelButtonTemplate")
+    interactBtn:SetSize(160, 22)
+    interactBtn:SetPoint("TOPLEFT", interactLabel, "BOTTOMLEFT", -10, -15)
+    interactBtn:SetText("Target Merchant")
+    interactBtn:SetAttribute("type", "macro")
+    interactBtn:SetAttribute("macrotext", "/cleartarget\n/targetexact Goblin Merchant")
+    
+    local bindText = interactBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    bindText:SetPoint("LEFT", interactBtn, "RIGHT", 10, 0)
+    c.interactBindText = bindText
+
+    c.debugMode = CreateCheckButton("AV_DebugMode", "Debug Mode", interactBtn, -10, -5, "debugMode")
+
+    local testBtn = CreateFrame("Button", nil, c, "UIPanelButtonTemplate")
+    testBtn:SetSize(120, 22)
+    testBtn:SetPoint("TOPLEFT", c.debugMode, "BOTTOMLEFT", 10, -5)
+    testBtn:SetText("Test Sequence")
+    testBtn:SetScript("OnClick", function() SlashCmdList["AUTOVENDOR"]("test") end)
 end,
 function(p)
     -- Refresh
@@ -291,6 +381,18 @@ function(p)
     c.ilvlEB:SetText(AutoVendorSettings.maxItemLevel or 0)
     c.rateEB:SetText(AutoVendorSettings.sellRate or 3)
     c.batchEB:SetText(AutoVendorSettings.sellBatchSize or 10)
+    c.autoSummon:SetChecked(AutoVendorSettings.autoSummon)
+    c.delayEB:SetText(AutoVendorSettings.scavengerDelay or 5)
+    c.keyEB:SetText(AutoVendorSettings.targetKey or "G")
+    c.interactEB:SetText(AutoVendorSettings.interactKey or "F")
+    c.debugMode:SetChecked(AutoVendorSettings.debugMode)
+    
+    local key = GetBindingKey("INTERACTTARGET")
+    if key then
+        c.interactBindText:SetText("Bind: " .. key)
+    else
+        c.interactBindText:SetText("No Interact Bind!")
+    end
 end)
 
 -------------------------------------------------
