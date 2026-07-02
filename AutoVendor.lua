@@ -7,6 +7,9 @@ local frame = CreateFrame("Frame")
 print("|cff00ff00AutoVendor (WotLK) Loaded Successfully.|r")
 
 -- 2. Settings Initialization
+local VERSION = "1.1"
+local GITHUB_URL = "https://github.com/User/AutoVendor"
+
 local defaults = {
     sellGreys = true,
     sellWhites = false,
@@ -21,6 +24,8 @@ local defaults = {
     sellRate = 3,
     sellBatchSize = 10,
     autoSummon = false,
+    scavengerDelay = 5,
+    debugMode = false,
     exceptions = {},
     stats = {
         totalGold = 0,
@@ -83,7 +88,9 @@ targetBtn:Hide()
 
 -- PostClick doesn't interfere with the secure action
 targetBtn:SetScript("PostClick", function(self)
-    print("|cff00ff00AutoVendor:|r Targeting button clicked.")
+    if AutoVendorSettings.debugMode then
+        print("|cff00ff00AutoVendor Debug:|r Targeting button clicked.")
+    end
     if not InCombatLockdown() then
         self:Hide()
     end
@@ -144,7 +151,9 @@ local function CheckBagSpace()
             summonState = 1
             summonTimer = 0
             frame:SetScript("OnUpdate", frame.AutoVendor_OnUpdate)
-            print("|cff00ff00AutoVendor:|r Bags are full! Starting summon sequence...")
+            if AutoVendorSettings.debugMode then
+                print("|cff00ff00AutoVendor Debug:|r Bags are full! Starting summon sequence...")
+            end
         end
         wasFull = true
     else
@@ -325,6 +334,17 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         frame:SetScript("OnUpdate", frame.AutoVendor_OnUpdate)
         print("|cff00ff00AutoVendor:|r Starting test summon sequence...")
 
+    elseif cmd == "debug" then
+        AutoVendorSettings.debugMode = not AutoVendorSettings.debugMode
+        print("|cff00ff00AutoVendor:|r Debug mode " .. (AutoVendorSettings.debugMode and "|cff00ff00Enabled|r" or "|cffff0000Disabled|r"))
+        if AutoVendorUI and AutoVendorUI.frame:IsShown() and AutoVendorUI.pages[1] and AutoVendorUI.pages[1]:IsShown() then
+            AutoVendorUI:SetTab(1)
+        end
+
+    elseif cmd == "version" then
+        print("|cff00ff00AutoVendor Version:|r " .. VERSION)
+        print("|cff00ff00GitHub:|r " .. GITHUB_URL)
+
     else
         print("|cffffff00AutoVendor usage:|r")
         print("  /av - Toggle UI")
@@ -333,6 +353,8 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         print("  /av stats - Show lifetime statistics")
         print("  /av gph [start|pause|stop] - Track Gold Per Hour")
         print("  /av test - Test pet summon sequence")
+        print("  /av debug - Toggle debug mode")
+        print("  /av version - Check version and GitHub")
     end
 end
 
@@ -359,8 +381,8 @@ local function SummonPet(name)
         end
     end
 
-    if not found then
-        print("|cffff0000AutoVendor Error:|r Could not find pet '" .. name .. "'. Available pets:")
+    if not found and AutoVendorSettings.debugMode then
+        print("|cffff0000AutoVendor Debug:|r Could not find pet '" .. name .. "'. Available pets:")
         for i = 1, num do
             local _, cName = GetCompanionInfo("CRITTER", i)
             if cName then
@@ -462,7 +484,9 @@ function frame:AutoVendor_OnUpdate(elapsed)
         if summonState == 1 then -- Initial delay before summon
             if summonTimer >= 1 then
                 if SummonPet("Goblin Merchant") then
-                    print("|cff00ff00AutoVendor:|r Summoning Goblin Merchant...")
+                    if AutoVendorSettings.debugMode then
+                        print("|cff00ff00AutoVendor Debug:|r Summoning Goblin Merchant...")
+                    end
                     summonState = 2
                     summonTimer = 0
                 else
@@ -471,17 +495,22 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 2 then -- Delay before targeting
             if summonTimer >= 2 then
-                print("|cff00ff00AutoVendor:|r Goblin Merchant summoned. Click the button on screen to target!")
+                if AutoVendorSettings.debugMode then
+                    print("|cff00ff00AutoVendor Debug:|r Goblin Merchant summoned. Showing target button.")
+                end
                 if not InCombatLockdown() then
                     targetBtn:Show()
                 end
                 summonState = 3
                 summonTimer = 0
             end
-        elseif summonState == 4 then -- Wait 10 seconds after interaction
-            if summonTimer >= 10 then
+        elseif summonState == 4 then -- Wait X seconds after interaction
+            local delay = AutoVendorSettings.scavengerDelay or 5
+            if summonTimer >= delay then
                 if SummonPet("Greedy Scavenger") then
-                    print("|cff00ff00AutoVendor:|r Summoning Greedy Scavenger...")
+                    if AutoVendorSettings.debugMode then
+                        print("|cff00ff00AutoVendor Debug:|r Summoning Greedy Scavenger...")
+                    end
                 end
                 summonState = 0
             end
@@ -544,7 +573,10 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             if name and name:lower():find("goblin merchant", 1, true) then
                 summonState = 4
                 summonTimer = 0
-                print("|cff00ff00AutoVendor:|r Merchant interaction detected. Waiting 10 seconds for Greedy Scavenger...")
+                local delay = AutoVendorSettings.scavengerDelay or 5
+                if AutoVendorSettings.debugMode then
+                    print(string.format("|cff00ff00AutoVendor Debug:|r Merchant interaction detected. Waiting %d seconds for Greedy Scavenger...", delay))
+                end
                 if not InCombatLockdown() then
                     targetBtn:Hide()
                 end
