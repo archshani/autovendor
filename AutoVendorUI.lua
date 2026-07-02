@@ -292,7 +292,7 @@ function(p)
     interactBtn:SetAttribute("type", "macro")
     -- WotLK doesn't have a direct "interact" secure command that works easily without a specific target.
     -- We use /target and the user can then use their interact key.
-    interactBtn:SetAttribute("macrotext", "/target Goblin Merchant")
+    interactBtn:SetAttribute("macrotext", "/tar goblin merchant")
 
     local bindText = interactBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     bindText:SetPoint("LEFT", interactBtn, "RIGHT", 10, 0)

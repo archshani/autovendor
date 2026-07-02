@@ -78,7 +78,7 @@ targetBtn:SetSize(200, 50)
 targetBtn:SetPoint("CENTER", 0, 50)
 targetBtn:SetText("Target Goblin Merchant")
 targetBtn:SetAttribute("type", "macro")
-targetBtn:SetAttribute("macrotext", "/target Goblin Merchant")
+targetBtn:SetAttribute("macrotext", "/tar goblin merchant")
 targetBtn:Hide()
 
 -- Since we can't hide secure frames in combat or via script easily while they are being clicked,
