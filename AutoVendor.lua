@@ -27,6 +27,7 @@ local defaults = {
     scavengerDelay = 5,
     debugMode = false,
     targetKey = "G",
+    interactKey = "H",
     exceptions = {},
     stats = {
         totalGold = 0,
@@ -40,9 +41,12 @@ local defaults = {
 
 local function UpdateTargetBind()
     if InCombatLockdown() then return end
+    ClearOverrideBindings(frame)
     if AutoVendorSettings.targetKey and AutoVendorSettings.targetKey ~= "" then
-        ClearOverrideBindings(frame)
         SetBindingClick(AutoVendorSettings.targetKey, "AV_TargetBtn")
+    end
+    if AutoVendorSettings.interactKey and AutoVendorSettings.interactKey ~= "" then
+        SetOverrideBinding(frame, true, AutoVendorSettings.interactKey, "INTERACTTARGET")
     end
 end
 
@@ -510,13 +514,11 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 2 then -- Delay before targeting
             if summonTimer >= 2 then
-                local bindStr = AutoVendorSettings.targetKey and (" (Press '" .. AutoVendorSettings.targetKey .. "')") or ""
-                print("|cff00ff00AutoVendor:|r Goblin Merchant summoned. Click the button on screen to target!" .. bindStr)
-                if not InCombatLockdown() then
-                    targetBtn:Show()
-                else
-                    pendingTargetShow = true
-                end
+                local tKey = AutoVendorSettings.targetKey or ""
+                local iKey = AutoVendorSettings.interactKey or ""
+                local bindStr = string.format(" (Target: '%s', Interact: '%s')", tKey, iKey)
+                print("|cff00ff00AutoVendor:|r Goblin Merchant summoned. Please target and interact now!" .. bindStr)
+                -- We no longer show the on-screen button, but the keybind is still active
                 summonState = 3
                 summonTimer = 0
             end
@@ -586,10 +588,7 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         _G.AutoVendor_UpdateTargetBind = UpdateTargetBind
     elseif event == "PLAYER_REGEN_ENABLED" then
         UpdateTargetBind()
-        if pendingTargetShow then
-            targetBtn:Show()
-            pendingTargetShow = false
-        end
+        pendingTargetShow = false
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
     elseif event == "MERCHANT_SHOW" then
@@ -603,11 +602,7 @@ frame:SetScript("OnEvent", function(self, event, arg1)
                 if AutoVendorSettings.debugMode then
                     print(string.format("|cff00ff00AutoVendor Debug:|r Merchant interaction detected. Waiting %d seconds for Greedy Scavenger...", delay))
                 end
-                if not InCombatLockdown() then
-                    targetBtn:Hide()
-                else
-                    pendingTargetShow = false -- Cancel show if we somehow interacted before leaving combat
-                end
+                pendingTargetShow = false
             end
         end
 

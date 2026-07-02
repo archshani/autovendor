@@ -323,9 +323,32 @@ function(p)
     keyEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     c.keyEB = keyEB
 
+    -- Interact Key
+    local interactLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    interactLabel:SetPoint("TOPLEFT", keyLabel, "BOTTOMLEFT", 0, -15)
+    interactLabel:SetText("Interact Key:")
+
+    local interactEB = CreateFrame("EditBox", "AV_InteractKeyEB", c, "InputBoxTemplate")
+    interactEB:SetSize(40, 20)
+    interactEB:SetPoint("LEFT", interactLabel, "RIGHT", 10, 0)
+    interactEB:SetAutoFocus(false)
+    interactEB:SetMaxLetters(1)
+    interactEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = self:GetText():upper()
+        if val ~= "" then
+            AutoVendorSettings.interactKey = val
+            if _G.AutoVendor_UpdateTargetBind then
+                _G.AutoVendor_UpdateTargetBind()
+            end
+        end
+    end)
+    interactEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    c.interactEB = interactEB
+
     local interactBtn = CreateFrame("Button", "AV_InteractBtn", c, "SecureActionButtonTemplate, UIPanelButtonTemplate")
     interactBtn:SetSize(160, 22)
-    interactBtn:SetPoint("TOPLEFT", keyLabel, "BOTTOMLEFT", -10, -15)
+    interactBtn:SetPoint("TOPLEFT", interactLabel, "BOTTOMLEFT", -10, -15)
     interactBtn:SetText("Target Merchant")
     interactBtn:SetAttribute("type", "macro")
     interactBtn:SetAttribute("macrotext", "/cleartarget\n/targetexact Goblin Merchant")
@@ -361,6 +384,7 @@ function(p)
     c.autoSummon:SetChecked(AutoVendorSettings.autoSummon)
     c.delayEB:SetText(AutoVendorSettings.scavengerDelay or 5)
     c.keyEB:SetText(AutoVendorSettings.targetKey or "G")
+    c.interactEB:SetText(AutoVendorSettings.interactKey or "H")
     c.debugMode:SetChecked(AutoVendorSettings.debugMode)
 
     local key = GetBindingKey("INTERACTTARGET")
