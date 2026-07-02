@@ -111,8 +111,8 @@ targetBtn:SetScript("PostClick", function(self)
     end
 end)
 
-local function ShowAlert(text, isFull)
-    if not AutoVendorSettings.showBagWarning then 
+local function ShowAlert(text, isFull, force)
+    if not AutoVendorSettings.showBagWarning and not force then
         alertFrame:Hide()
         return 
     end
@@ -120,6 +120,8 @@ local function ShowAlert(text, isFull)
     alertFrame.text:SetText(text)
     if isFull then
         alertFrame.text:SetFont("Fonts\\FRIZQT__.TTF", 42, "OUTLINE, MONOCHROME")
+    elseif force then
+        alertFrame.text:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE, MONOCHROME")
     else
         alertFrame.text:SetFont("Fonts\\FRIZQT__.TTF", 32, "OUTLINE, MONOCHROME")
     end
@@ -147,19 +149,21 @@ local function CheckBagSpace()
         end
     end
 
-    if AutoVendorSettings.showBagWarning then
-        local thresholdPercent = AutoVendorSettings.bagWarningThreshold or 15
-        local threshold = math.floor((thresholdPercent / 100) * totalSlots)
+    if summonState == 0 then
+        if AutoVendorSettings.showBagWarning then
+            local thresholdPercent = AutoVendorSettings.bagWarningThreshold or 15
+            local threshold = math.floor((thresholdPercent / 100) * totalSlots)
 
-        if totalFree == 0 then
-            ShowAlert("BAGS ARE FULL!", true)
-        elseif totalFree <= threshold then
-            ShowAlert(string.format("You have %d bag space remaining", totalFree), false)
+            if totalFree == 0 then
+                ShowAlert("BAGS ARE FULL!", true)
+            elseif totalFree <= threshold then
+                ShowAlert(string.format("You have %d bag space remaining", totalFree), false)
+            else
+                alertFrame:Hide()
+            end
         else
             alertFrame:Hide()
         end
-    else
-        alertFrame:Hide()
     end
 
     -- Summon Logic Trigger (5-second rule)
@@ -504,7 +508,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
         summonTimer = summonTimer + elapsed
         
         if summonState == 1 then -- Initial delay before summon
-            ShowAlert("Goblin Merchant Summon.........", true)
+            ShowAlert("Goblin Merchant Summon.........", true, true)
             if summonTimer >= 1 then
                 local success, exactName = SummonPet("Goblin Merchant")
                 if success then
@@ -519,18 +523,22 @@ function frame:AutoVendor_OnUpdate(elapsed)
                 end
             end
         elseif summonState == 2 then -- Delay before targeting
-            ShowAlert("Goblin Merchant Summon.........", true)
+            ShowAlert("Goblin Merchant Summon.........", true, true)
             if summonTimer >= 2 then
-                local tKey = AutoVendorSettings.targetKey or ""
-                local iKey = AutoVendorSettings.interactKey or ""
-                local bindStr = string.format(" (Target: '%s', Interact: '%s')", tKey, iKey)
-                print("|cff00ff00AutoVendor:|r Goblin Merchant summoned. Please target and interact now!" .. bindStr)
-                -- We no longer show the on-screen button, but the keybind is still active
                 summonState = 3
                 summonTimer = 0
-                CheckBagSpace() -- Re-check to show BAGS FULL or nothing
             end
+        elseif summonState == 3 then -- Show bind info
+            local tKey = AutoVendorSettings.targetKey or ""
+            local iKey = AutoVendorSettings.interactKey or ""
+            local msg = string.format("Goblin Merchant summoned. Please target and interact now! (Target: '%s', Interact: '%s')", tKey, iKey)
+            ShowAlert(msg, false, true)
         elseif summonState == 4 then -- Wait X seconds after interaction
+            local tKey = AutoVendorSettings.targetKey or ""
+            local iKey = AutoVendorSettings.interactKey or ""
+            local msg = string.format("Goblin Merchant summoned. Please target and interact now! (Target: '%s', Interact: '%s')", tKey, iKey)
+            ShowAlert(msg, false, true)
+
             local delay = AutoVendorSettings.scavengerDelay or 5
             if summonTimer >= delay then
                 local success, exactName = SummonPet("Greedy Scavenger")
@@ -540,6 +548,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                     end
                 end
                 summonState = 0
+                CheckBagSpace() -- Reset alerts
             end
         end
     end
