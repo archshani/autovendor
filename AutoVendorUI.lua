@@ -152,7 +152,7 @@ function(p)
     sf:SetPoint("BOTTOMRIGHT", -30, 0)
 
     local c = CreateFrame("Frame", nil, sf)
-    c:SetSize(310, 600) -- Increased height for new settings
+    c:SetSize(310, 650) -- Height enough for all settings
     sf:SetScrollChild(c)
     p.content = c
 
@@ -300,9 +300,32 @@ function(p)
     delayEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     c.delayEB = delayEB
 
+    -- Targeting Key
+    local keyLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    keyLabel:SetPoint("TOPLEFT", delayLabel, "BOTTOMLEFT", 0, -15)
+    keyLabel:SetText("Targeting Key:")
+
+    local keyEB = CreateFrame("EditBox", "AV_TargetKeyEB", c, "InputBoxTemplate")
+    keyEB:SetSize(40, 20)
+    keyEB:SetPoint("LEFT", keyLabel, "RIGHT", 10, 0)
+    keyEB:SetAutoFocus(false)
+    keyEB:SetMaxLetters(1)
+    keyEB:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local val = self:GetText():upper()
+        if val ~= "" then
+            AutoVendorSettings.targetKey = val
+            if _G.AutoVendor_UpdateTargetBind then
+                _G.AutoVendor_UpdateTargetBind()
+            end
+        end
+    end)
+    keyEB:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    c.keyEB = keyEB
+
     local interactBtn = CreateFrame("Button", "AV_InteractBtn", c, "SecureActionButtonTemplate, UIPanelButtonTemplate")
     interactBtn:SetSize(160, 22)
-    interactBtn:SetPoint("TOPLEFT", delayLabel, "BOTTOMLEFT", -10, -10)
+    interactBtn:SetPoint("TOPLEFT", keyLabel, "BOTTOMLEFT", -10, -15)
     interactBtn:SetText("Target Merchant")
     interactBtn:SetAttribute("type", "macro")
     interactBtn:SetAttribute("macrotext", "/cleartarget\n/tar goblin merchant")
@@ -337,6 +360,7 @@ function(p)
     c.batchEB:SetText(AutoVendorSettings.sellBatchSize or 10)
     c.autoSummon:SetChecked(AutoVendorSettings.autoSummon)
     c.delayEB:SetText(AutoVendorSettings.scavengerDelay or 5)
+    c.keyEB:SetText(AutoVendorSettings.targetKey or "G")
     c.debugMode:SetChecked(AutoVendorSettings.debugMode)
 
     local key = GetBindingKey("INTERACTTARGET")

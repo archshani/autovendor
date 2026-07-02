@@ -7,7 +7,7 @@ local frame = CreateFrame("Frame")
 print("|cff00ff00AutoVendor (WotLK) Loaded Successfully.|r")
 
 -- 2. Settings Initialization
-local VERSION = "1.1"
+local VERSION = "1.2"
 local GITHUB_URL = "https://github.com/User/AutoVendor"
 
 local defaults = {
@@ -26,6 +26,7 @@ local defaults = {
     autoSummon = false,
     scavengerDelay = 5,
     debugMode = false,
+    targetKey = "G",
     exceptions = {},
     stats = {
         totalGold = 0,
@@ -36,6 +37,14 @@ local defaults = {
         count4 = 0  -- Epic
     }
 }
+
+local function UpdateTargetBind()
+    if InCombatLockdown() then return end
+    if AutoVendorSettings.targetKey and AutoVendorSettings.targetKey ~= "" then
+        ClearOverrideBindings(frame)
+        SetBindingClick(AutoVendorSettings.targetKey, "AV_TargetBtn")
+    end
+end
 
 local function InitializeSettings()
     if type(AutoVendorSettings) ~= "table" then
@@ -63,6 +72,8 @@ local function InitializeSettings()
             AutoVendorSettings.stats[k] = v
         end
     end
+
+    UpdateTargetBind()
 end
 
 -- Initial call in case variables are already loaded (e.g. on /reload)
@@ -115,6 +126,7 @@ end
 local summonState = 0
 local summonTimer = 0
 local wasFull = false
+local pendingTargetShow = false
 
 local function CheckBagSpace()
     local totalFree = 0
@@ -495,11 +507,12 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 2 then -- Delay before targeting
             if summonTimer >= 2 then
-                if AutoVendorSettings.debugMode then
-                    print("|cff00ff00AutoVendor Debug:|r Goblin Merchant summoned. Showing target button.")
-                end
+                local bindStr = AutoVendorSettings.targetKey and (" (Press '" .. AutoVendorSettings.targetKey .. "')") or ""
+                print("|cff00ff00AutoVendor:|r Goblin Merchant summoned. Click the button on screen to target!" .. bindStr)
                 if not InCombatLockdown() then
                     targetBtn:Show()
+                else
+                    pendingTargetShow = true
                 end
                 summonState = 3
                 summonTimer = 0
@@ -561,9 +574,18 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
 frame:RegisterEvent("BAG_UPDATE")
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "AutoVendor" then
         InitializeSettings()
+        _G.AutoVendor_UpdateTargetBind = UpdateTargetBind
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        UpdateTargetBind()
+        if pendingTargetShow then
+            targetBtn:Show()
+            pendingTargetShow = false
+        end
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
     elseif event == "MERCHANT_SHOW" then
@@ -579,6 +601,8 @@ frame:SetScript("OnEvent", function(self, event, arg1)
                 end
                 if not InCombatLockdown() then
                     targetBtn:Hide()
+                else
+                    pendingTargetShow = false -- Cancel show if we somehow interacted before leaving combat
                 end
             end
         end
