@@ -94,7 +94,7 @@ targetBtn:SetSize(200, 50)
 targetBtn:SetPoint("CENTER", 0, 50)
 targetBtn:SetText("Target Goblin Merchant")
 targetBtn:SetAttribute("type", "macro")
-targetBtn:SetAttribute("macrotext", "/cleartarget\n/tar goblin merchant")
+targetBtn:SetAttribute("macrotext", "/cleartarget\n/targetexact Goblin Merchant")
 targetBtn:Hide()
 
 -- PostClick doesn't interfere with the secure action
@@ -380,10 +380,12 @@ local function SummonPet(name)
     local num = GetNumCompanions("CRITTER")
     local found = false
     local lowerTarget = name:lower()
+    local exactName = nil
 
     for i = 1, num do
         local _, cName = GetCompanionInfo("CRITTER", i)
         if cName and cName:lower():find(lowerTarget, 1, true) then
+            exactName = cName
             local _, _, _, _, active = GetCompanionInfo("CRITTER", i)
             if not active then
                 CallCompanion("CRITTER", i)
@@ -402,7 +404,7 @@ local function SummonPet(name)
             end
         end
     end
-    return found
+    return found, exactName
 end
 
 function frame:AutoVendor_OnUpdate(elapsed)
@@ -495,9 +497,10 @@ function frame:AutoVendor_OnUpdate(elapsed)
 
         if summonState == 1 then -- Initial delay before summon
             if summonTimer >= 1 then
-                if SummonPet("Goblin Merchant") then
+                local success, exactName = SummonPet("Goblin Merchant")
+                if success then
                     if AutoVendorSettings.debugMode then
-                        print("|cff00ff00AutoVendor Debug:|r Summoning Goblin Merchant...")
+                        print("|cff00ff00AutoVendor Debug:|r Summoning " .. (exactName or "Goblin Merchant") .. "...")
                     end
                     summonState = 2
                     summonTimer = 0
@@ -520,9 +523,10 @@ function frame:AutoVendor_OnUpdate(elapsed)
         elseif summonState == 4 then -- Wait X seconds after interaction
             local delay = AutoVendorSettings.scavengerDelay or 5
             if summonTimer >= delay then
-                if SummonPet("Greedy Scavenger") then
+                local success, exactName = SummonPet("Greedy Scavenger")
+                if success then
                     if AutoVendorSettings.debugMode then
-                        print("|cff00ff00AutoVendor Debug:|r Summoning Greedy Scavenger...")
+                        print("|cff00ff00AutoVendor Debug:|r Summoning " .. (exactName or "Greedy Scavenger") .. "...")
                     end
                 end
                 summonState = 0

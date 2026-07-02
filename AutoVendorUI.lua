@@ -328,7 +328,7 @@ function(p)
     interactBtn:SetPoint("TOPLEFT", keyLabel, "BOTTOMLEFT", -10, -15)
     interactBtn:SetText("Target Merchant")
     interactBtn:SetAttribute("type", "macro")
-    interactBtn:SetAttribute("macrotext", "/cleartarget\n/tar goblin merchant")
+    interactBtn:SetAttribute("macrotext", "/cleartarget\n/targetexact Goblin Merchant")
 
     local bindText = interactBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     bindText:SetPoint("LEFT", interactBtn, "RIGHT", 10, 0)
