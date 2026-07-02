@@ -72,6 +72,23 @@ alertFrame.text:SetAllPoints()
 alertFrame.text:SetTextColor(1, 0, 0) -- Red
 alertFrame:Hide()
 
+-- 3.1 Target Alert Frame (Secure)
+local targetBtn = CreateFrame("Button", "AV_TargetBtn", UIParent, "SecureActionButtonTemplate, UIPanelButtonTemplate")
+targetBtn:SetSize(200, 50)
+targetBtn:SetPoint("CENTER", 0, 50)
+targetBtn:SetText("Target Goblin Merchant")
+targetBtn:SetAttribute("type", "macro")
+targetBtn:SetAttribute("macrotext", "/target Goblin Merchant")
+targetBtn:Hide()
+
+-- Since we can't hide secure frames in combat or via script easily while they are being clicked,
+-- we'll use a trick: it hides itself OnClick (not protected if not in combat)
+targetBtn:SetScript("OnClick", function(self)
+    if not InCombatLockdown() then
+        self:Hide()
+    end
+end)
+
 local function ShowAlert(text, isFull)
     if not AutoVendorSettings.showBagWarning then
         alertFrame:Hide()
@@ -327,17 +344,31 @@ local sellTimer = 0
 
 local function SummonPet(name)
     local num = GetNumCompanions("CRITTER")
+    local found = false
+    local lowerTarget = name:lower()
+
     for i = 1, num do
         local _, cName = GetCompanionInfo("CRITTER", i)
-        if cName == name then
+        if cName and cName:lower():find(lowerTarget, 1, true) then
             local _, _, _, _, active = GetCompanionInfo("CRITTER", i)
             if not active then
                 CallCompanion("CRITTER", i)
             end
-            return true
+            found = true
+            break
         end
     end
-    return false
+
+    if not found then
+        print("|cffff0000AutoVendor Error:|r Could not find pet '" .. name .. "'. Available pets:")
+        for i = 1, num do
+            local _, cName = GetCompanionInfo("CRITTER", i)
+            if cName then
+                print("  - " .. cName)
+            end
+        end
+    end
+    return found
 end
 
 function frame:AutoVendor_OnUpdate(elapsed)
@@ -435,15 +466,15 @@ function frame:AutoVendor_OnUpdate(elapsed)
                     summonState = 2
                     summonTimer = 0
                 else
-                    print("|cffff0000AutoVendor Error:|r Goblin Merchant pet not found!")
                     summonState = 0
                 end
             end
         elseif summonState == 2 then -- Delay before targeting
             if summonTimer >= 2 then
-                -- Note: TargetByName is protected. We rely on the SecureButton in UI for targeting.
-                -- But we can try to print a reminder.
-                print("|cff00ff00AutoVendor:|r Goblin Merchant summoned. Please use the 'Interact' button in settings.")
+                print("|cff00ff00AutoVendor:|r Goblin Merchant summoned. Click the button on screen to target!")
+                if not InCombatLockdown() then
+                    targetBtn:Show()
+                end
                 summonState = 3
                 summonTimer = 0
             end
@@ -451,8 +482,6 @@ function frame:AutoVendor_OnUpdate(elapsed)
             if summonTimer >= 10 then
                 if SummonPet("Greedy Scavenger") then
                     print("|cff00ff00AutoVendor:|r Summoning Greedy Scavenger...")
-                else
-                    print("|cffff0000AutoVendor Error:|r Greedy Scavenger pet not found!")
                 end
                 summonState = 0
             end
@@ -512,10 +541,13 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         -- Handle summoning state transition
         if summonState == 3 then
             local name = GetUnitName("target")
-            if name == "Goblin Merchant" then
+            if name and name:lower():find("goblin merchant", 1, true) then
                 summonState = 4
                 summonTimer = 0
                 print("|cff00ff00AutoVendor:|r Merchant interaction detected. Waiting 10 seconds for Greedy Scavenger...")
+                if not InCombatLockdown() then
+                    targetBtn:Hide()
+                end
             end
         end
 
