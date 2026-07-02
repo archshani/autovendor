@@ -149,7 +149,7 @@ function(p)
     sf:SetPoint("BOTTOMRIGHT", -30, 0)
 
     local c = CreateFrame("Frame", nil, sf)
-    c:SetSize(310, 430) -- Height enough for all settings
+    c:SetSize(310, 550) -- Height enough for all settings
     sf:SetScrollChild(c)
     p.content = c
 
@@ -274,6 +274,38 @@ function(p)
     local warning = c:CreateFontString(nil, "OVERLAY", "GameFontRedSmall")
     warning:SetPoint("TOPLEFT", batchLabel, "BOTTOMLEFT", 0, -10)
     warning:SetText("Warning: High Rate + High Batch Size may cause disconnects!")
+
+    -- Pet Summoning Settings
+    local petTitle = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    petTitle:SetPoint("TOPLEFT", warning, "BOTTOMLEFT", 0, -20)
+    petTitle:SetText("Pet Summoning")
+
+    c.autoSummon = CreateCheckButton("AV_AutoSummon", "Summon Merchant when bags full", petTitle, 0, -10, "autoSummon")
+
+    -- Interact Button (Secure)
+    -- We need a secure button to target the pet and interact.
+    -- Actually, we can make it a macro button.
+    local interactBtn = CreateFrame("Button", "AV_InteractBtn", c, "SecureActionButtonTemplate, UIPanelButtonTemplate")
+    interactBtn:SetSize(160, 25)
+    interactBtn:SetPoint("TOPLEFT", c.autoSummon, "BOTTOMLEFT", 10, -10)
+    interactBtn:SetText("Interact with Merchant")
+    interactBtn:SetAttribute("type", "macro")
+    -- WotLK doesn't have a direct "interact" secure command that works easily without a specific target.
+    -- We use /target and the user can then use their interact key.
+    interactBtn:SetAttribute("macrotext", "/target Goblin Merchant")
+
+    local bindText = interactBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    bindText:SetPoint("LEFT", interactBtn, "RIGHT", 10, 0)
+    c.interactBindText = bindText
+
+    -- Test Button
+    local testBtn = CreateFrame("Button", nil, c, "UIPanelButtonTemplate")
+    testBtn:SetSize(120, 25)
+    testBtn:SetPoint("TOPLEFT", interactBtn, "BOTTOMLEFT", 0, -10)
+    testBtn:SetText("Test Sequence")
+    testBtn:SetScript("OnClick", function()
+        SlashCmdList["AUTOVENDOR"]("test")
+    end)
 end,
 function(p)
     -- Refresh
@@ -291,6 +323,14 @@ function(p)
     c.ilvlEB:SetText(AutoVendorSettings.maxItemLevel or 0)
     c.rateEB:SetText(AutoVendorSettings.sellRate or 3)
     c.batchEB:SetText(AutoVendorSettings.sellBatchSize or 10)
+    c.autoSummon:SetChecked(AutoVendorSettings.autoSummon)
+
+    local key = GetBindingKey("INTERACTTARGET")
+    if key then
+        c.interactBindText:SetText("Bind: " .. key)
+    else
+        c.interactBindText:SetText("No Interact Bind!")
+    end
 end)
 
 -------------------------------------------------

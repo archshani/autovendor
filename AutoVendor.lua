@@ -20,6 +20,7 @@ local defaults = {
     ignoreSoulbound = true,
     sellRate = 3,
     sellBatchSize = 10,
+    autoSummon = false,
     exceptions = {},
     stats = {
         totalGold = 0,
@@ -72,11 +73,11 @@ alertFrame.text:SetTextColor(1, 0, 0) -- Red
 alertFrame:Hide()
 
 local function ShowAlert(text, isFull)
-    if not AutoVendorSettings.showBagWarning then 
+    if not AutoVendorSettings.showBagWarning then
         alertFrame:Hide()
-        return 
+        return
     end
-    
+
     alertFrame.text:SetText(text)
     if isFull then
         alertFrame.text:SetFont("Fonts\\FRIZQT__.TTF", 42, "OUTLINE, MONOCHROME")
@@ -87,12 +88,11 @@ local function ShowAlert(text, isFull)
     alertFrame:Show()
 end
 
+local summonState = 0
+local summonTimer = 0
+local wasFull = false
+
 local function CheckBagSpace()
-    if not AutoVendorSettings.showBagWarning then 
-        alertFrame:Hide()
-        return 
-    end
-    
     local totalFree = 0
     local totalSlots = 0
     for bag = 0, 4 do
@@ -106,15 +106,32 @@ local function CheckBagSpace()
         end
     end
 
-    local thresholdPercent = AutoVendorSettings.bagWarningThreshold or 15
-    local threshold = math.floor((thresholdPercent / 100) * totalSlots)
+    if AutoVendorSettings.showBagWarning then
+        local thresholdPercent = AutoVendorSettings.bagWarningThreshold or 15
+        local threshold = math.floor((thresholdPercent / 100) * totalSlots)
 
-    if totalFree == 0 then
-        ShowAlert("BAGS ARE FULL!", true)
-    elseif totalFree <= threshold then
-        ShowAlert(string.format("You have %d bag space remaining", totalFree), false)
+        if totalFree == 0 then
+            ShowAlert("BAGS ARE FULL!", true)
+        elseif totalFree <= threshold then
+            ShowAlert(string.format("You have %d bag space remaining", totalFree), false)
+        else
+            alertFrame:Hide()
+        end
     else
         alertFrame:Hide()
+    end
+
+    -- Summon Logic Trigger
+    if AutoVendorSettings.autoSummon and totalFree == 0 then
+        if not wasFull and summonState == 0 then
+            summonState = 1
+            summonTimer = 0
+            frame:SetScript("OnUpdate", frame.AutoVendor_OnUpdate)
+            print("|cff00ff00AutoVendor:|r Bags are full! Starting summon sequence...")
+        end
+        wasFull = true
+    else
+        wasFull = false
     end
 end
 
@@ -141,9 +158,9 @@ local function IsSoulbound(bag, slot)
             local text = line:GetText()
             if text then
                 -- Standard soulbound and account bound strings
-                if text:find(ITEM_SOULBOUND, 1, true) or 
-                   text:find(ITEM_BIND_ON_PICKUP, 1, true) or 
-                   (ITEM_BIND_TO_ACCOUNT and text:find(ITEM_BIND_TO_ACCOUNT, 1, true)) or 
+                if text:find(ITEM_SOULBOUND, 1, true) or
+                   text:find(ITEM_BIND_ON_PICKUP, 1, true) or
+                   (ITEM_BIND_TO_ACCOUNT and text:find(ITEM_BIND_TO_ACCOUNT, 1, true)) or
                    (ITEM_BIND_TO_BNETACCOUNT and text:find(ITEM_BIND_TO_BNETACCOUNT, 1, true)) then
                     return true
                 end
@@ -161,7 +178,7 @@ local function FormatMoney(amount)
     elseif GetCoinText then
         return GetCoinText(amount)
     end
-    
+
     -- Fallback manual formatting
     local gold = math.floor(amount / 10000)
     local silver = math.floor((amount % 10000) / 100)
@@ -207,10 +224,10 @@ function AutoVendorGPH:Stop()
     if totalElapsed > 0 then
         gph = (totalGained / totalElapsed) * 3600
     end
-    
-    print(string.format("|cff00ff00AutoVendor:|r You made %s in %d minutes with total %s per hour.", 
+
+    print(string.format("|cff00ff00AutoVendor:|r You made %s in %d minutes with total %s per hour.",
         FormatMoney(totalGained), math.floor(totalElapsed / 60), FormatMoney(gph)))
-    
+
     self.active = false
     self.paused = false
     self.elapsed = 0
@@ -231,7 +248,7 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
     end
 
     local cmd, arg1 = msg:match("^(%S*)%s*(.-)$")
-    
+
     if cmd == "stats" then
         local stats = AutoVendorSettings.stats or {}
         print("|cff00ff00AutoVendor Lifetime Statistics:|r")
@@ -285,6 +302,12 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
             print("|cffff0000Error:|r Please link an item or provide an Item ID. Example: /av remove [Item Link]")
         end
 
+    elseif cmd == "test" then
+        summonState = 1
+        summonTimer = 0
+        frame:SetScript("OnUpdate", frame.AutoVendor_OnUpdate)
+        print("|cff00ff00AutoVendor:|r Starting test summon sequence...")
+
     else
         print("|cffffff00AutoVendor usage:|r")
         print("  /av - Toggle UI")
@@ -292,6 +315,7 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
         print("  /av remove [item] - Remove item from exceptions")
         print("  /av stats - Show lifetime statistics")
         print("  /av gph [start|pause|stop] - Track Gold Per Hour")
+        print("  /av test - Test pet summon sequence")
     end
 end
 
@@ -301,91 +325,148 @@ local itemsSoldCount = 0
 local totalProfit = 0
 local sellTimer = 0
 
-local function OnUpdate(self, elapsed)
-    if #sellQueue == 0 then
+local function SummonPet(name)
+    local num = GetNumCompanions("CRITTER")
+    for i = 1, num do
+        local _, cName = GetCompanionInfo("CRITTER", i)
+        if cName == name then
+            local _, _, _, _, active = GetCompanionInfo("CRITTER", i)
+            if not active then
+                CallCompanion("CRITTER", i)
+            end
+            return true
+        end
+    end
+    return false
+end
+
+function frame:AutoVendor_OnUpdate(elapsed)
+    -- 1. Selling Logic
+    if #sellQueue > 0 then
+        local rate = AutoVendorSettings.sellRate or 3
+        local batchSize = AutoVendorSettings.sellBatchSize or 10
+        local interval = 1 / rate
+        sellTimer = sellTimer + elapsed
+
+        while sellTimer >= interval and #sellQueue > 0 do
+            sellTimer = sellTimer - interval
+
+            local stopBatch = false
+            for i = 1, batchSize do
+                local item = sellQueue[1]
+                if not item then break end
+
+                local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
+                if locked then
+                    stopBatch = true
+                    break
+                end
+
+                -- Safe to process, so remove from queue
+                table.remove(sellQueue, 1)
+
+                local link = GetContainerItemLink(item.bag, item.slot)
+                if link then
+                    local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
+                    local itemID = GetIDFromLink(link)
+
+                    if not count or count == 0 then count = 1 end
+
+                    local isException = false
+                    if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
+                        isException = true
+                    end
+
+                    local shouldSell = false
+                    if not isException then
+                        if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
+                        elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
+                        elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
+                        elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
+                        elseif quality == 4 and AutoVendorSettings.sellEpics then shouldSell = true
+                        end
+                    end
+
+                    -- Item Level check
+                    if shouldSell and AutoVendorSettings.useItemLevelFilter and AutoVendorSettings.maxItemLevel and AutoVendorSettings.maxItemLevel > 0 then
+                        local _, _, _, iLevel, _, itemType, _, _, _, _, _ = GetItemInfo(link)
+                        -- Armor and Weapon classes
+                        if itemType == "Armor" or itemType == "Weapon" or (itemType == (GetItemClassInfo and GetItemClassInfo(2))) or (itemType == (GetItemClassInfo and GetItemClassInfo(4))) then
+                            if iLevel and iLevel > AutoVendorSettings.maxItemLevel then
+                                shouldSell = false
+                            end
+                        end
+                    end
+
+                    if shouldSell and AutoVendorSettings.ignoreSoulbound and IsSoulbound(item.bag, item.slot) then
+                        shouldSell = false
+                    end
+
+                    if shouldSell and price and price > 0 then
+                        UseContainerItem(item.bag, item.slot)
+
+                        local itemProfit = (price * count)
+                        itemsSoldCount = itemsSoldCount + count
+                        totalProfit = totalProfit + itemProfit
+
+                        -- Update lifetime stats
+                        if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
+                        local s = AutoVendorSettings.stats
+                        s.totalGold = (s.totalGold or 0) + itemProfit
+                        if quality and quality >= 0 and quality <= 4 then
+                            local countKey = "count" .. quality
+                            s[countKey] = (s[countKey] or 0) + count
+                        end
+                    end
+                end
+            end
+            if stopBatch then break end
+        end
+    end
+
+    -- 2. Summoning Logic
+    if summonState > 0 then
+        summonTimer = summonTimer + elapsed
+
+        if summonState == 1 then -- Initial delay before summon
+            if summonTimer >= 1 then
+                if SummonPet("Goblin Merchant") then
+                    print("|cff00ff00AutoVendor:|r Summoning Goblin Merchant...")
+                    summonState = 2
+                    summonTimer = 0
+                else
+                    print("|cffff0000AutoVendor Error:|r Goblin Merchant pet not found!")
+                    summonState = 0
+                end
+            end
+        elseif summonState == 2 then -- Delay before targeting
+            if summonTimer >= 2 then
+                -- Note: TargetByName is protected. We rely on the SecureButton in UI for targeting.
+                -- But we can try to print a reminder.
+                print("|cff00ff00AutoVendor:|r Goblin Merchant summoned. Please use the 'Interact' button in settings.")
+                summonState = 3
+                summonTimer = 0
+            end
+        elseif summonState == 4 then -- Wait 10 seconds after interaction
+            if summonTimer >= 10 then
+                if SummonPet("Greedy Scavenger") then
+                    print("|cff00ff00AutoVendor:|r Summoning Greedy Scavenger...")
+                else
+                    print("|cffff0000AutoVendor Error:|r Greedy Scavenger pet not found!")
+                end
+                summonState = 0
+            end
+        end
+    end
+
+    -- 3. Cleanup
+    if #sellQueue == 0 and summonState == 0 then
         self:SetScript("OnUpdate", nil)
         if itemsSoldCount > 0 then
             local msg = string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit))
             print(msg)
-        end
-        return
-    end
-
-    local rate = AutoVendorSettings.sellRate or 3
-    local batchSize = AutoVendorSettings.sellBatchSize or 10
-    local interval = 1 / rate
-    sellTimer = sellTimer + elapsed
-
-    while sellTimer >= interval and #sellQueue > 0 do
-        sellTimer = sellTimer - interval
-        
-        for i = 1, batchSize do
-            local item = sellQueue[1]
-            if not item then break end
-            
-            local _, count, locked = GetContainerItemInfo(item.bag, item.slot)
-            if locked then
-                -- If item is locked, we stop this batch and wait for next frame
-                return
-            end
-
-            -- Safe to process, so remove from queue
-            table.remove(sellQueue, 1)
-
-            local link = GetContainerItemLink(item.bag, item.slot)
-            if link then
-                local _, _, quality, _, _, _, _, _, _, _, price = GetItemInfo(link)
-                local itemID = GetIDFromLink(link)
-                
-                if not count or count == 0 then count = 1 end
-
-                local isException = false
-                if itemID and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
-                    isException = true
-                end
-
-                local shouldSell = false
-                if not isException then
-                    if quality == 0 and AutoVendorSettings.sellGreys then shouldSell = true
-                    elseif quality == 1 and AutoVendorSettings.sellWhites then shouldSell = true
-                    elseif quality == 2 and AutoVendorSettings.sellGreens then shouldSell = true
-                    elseif quality == 3 and AutoVendorSettings.sellBlues then shouldSell = true
-                    elseif quality == 4 and AutoVendorSettings.sellEpics then shouldSell = true
-                    end
-                end
-
-                -- Item Level check
-                if shouldSell and AutoVendorSettings.useItemLevelFilter and AutoVendorSettings.maxItemLevel and AutoVendorSettings.maxItemLevel > 0 then
-                    local _, _, _, iLevel, _, itemType, _, _, _, _, _ = GetItemInfo(link)
-                    -- Armor and Weapon classes (using localized constants or English fallback)
-                    if itemType == "Armor" or itemType == "Weapon" or (itemType == (GetItemClassInfo and GetItemClassInfo(2))) or (itemType == (GetItemClassInfo and GetItemClassInfo(4))) then
-                        if iLevel and iLevel > AutoVendorSettings.maxItemLevel then
-                            shouldSell = false
-                        end
-                    end
-                end
-
-                if shouldSell and AutoVendorSettings.ignoreSoulbound and IsSoulbound(item.bag, item.slot) then
-                    shouldSell = false
-                end
-
-                if shouldSell and price and price > 0 then
-                    UseContainerItem(item.bag, item.slot)
-                    
-                    local itemProfit = (price * count)
-                    itemsSoldCount = itemsSoldCount + count
-                    totalProfit = totalProfit + itemProfit
-
-                    -- Update lifetime stats
-                    if not AutoVendorSettings.stats then AutoVendorSettings.stats = {} end
-                    local s = AutoVendorSettings.stats
-                    s.totalGold = (s.totalGold or 0) + itemProfit
-                    if quality and quality >= 0 and quality <= 4 then
-                        local countKey = "count" .. quality
-                        s[countKey] = (s[countKey] or 0) + count
-                    end
-                end
-            end
+            itemsSoldCount = 0
+            totalProfit = 0
         end
     end
 end
@@ -428,6 +509,16 @@ frame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
     elseif event == "MERCHANT_SHOW" then
+        -- Handle summoning state transition
+        if summonState == 3 then
+            local name = GetUnitName("target")
+            if name == "Goblin Merchant" then
+                summonState = 4
+                summonTimer = 0
+                print("|cff00ff00AutoVendor:|r Merchant interaction detected. Waiting 10 seconds for Greedy Scavenger...")
+            end
+        end
+
         if #sellQueue > 0 then return end
 
         sellQueue = {}
@@ -484,10 +575,12 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         end
 
         if #sellQueue > 0 then
-            self:SetScript("OnUpdate", OnUpdate)
+            self:SetScript("OnUpdate", self.AutoVendor_OnUpdate)
         end
     elseif event == "MERCHANT_CLOSED" then
         sellQueue = {}
-        self:SetScript("OnUpdate", nil)
+        if summonState == 0 then
+            self:SetScript("OnUpdate", nil)
+        end
     end
 end)
