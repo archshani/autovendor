@@ -595,6 +595,25 @@ function frame:AutoVendor_OnUpdate(elapsed)
         local oldState = summonState
         summonTimer = summonTimer + elapsed
         
+        if summonState > 0 and summonState < 4 then
+            -- Check if merchant is already open (user might have interacted fast)
+            local targetName = GetUnitName("target")
+            local matchName = currentMerchantName or "Goblin Merchant"
+            if targetName and targetName:lower():find(matchName:lower(), 1, true) then
+                -- Check if MerchantFrame is shown.
+                -- In 3.3.5a MerchantFrame is the standard name.
+                if MerchantFrame and MerchantFrame:IsShown() then
+                    if AutoVendorSettings.debugMode then
+                        print("|cff00ff00AutoVendor Debug:|r Merchant already open. Skipping to interaction handling.")
+                    end
+                    summonState = 4
+                    summonTimer = 0
+                    summonRetryCount = 0
+                    lastCheckTimer = nil
+                end
+            end
+        end
+
         if summonState == 1 then -- Summoning the Goblin Merchant
             lastPetName = "Goblin Merchant"
             ShowAlert("Summoning " .. lastPetName .. "...", true, true)
@@ -671,12 +690,24 @@ function frame:AutoVendor_OnUpdate(elapsed)
             ShowAlert(msg, false, true)
         elseif summonState == 4 then -- Wait X seconds after interaction
             local delay = AutoVendorSettings.scavengerDelay or 5
-            ShowAlert(string.format("Merchant interaction detected. Waiting %ds for Scavenger...", delay - math.floor(summonTimer)), false, true)
 
-            if summonTimer >= delay then
+            -- If selling is done (empty queue) and we've waited at least 1s, we can speed up.
+            -- This handles the case where interaction was fast and selling finished quickly.
+            local canSpeedUp = (#sellQueue == 0 and summonTimer >= 1)
+
+            if canSpeedUp then
+                if AutoVendorSettings.debugMode then
+                    print("|cff00ff00AutoVendor Debug:|r Selling finished, speeding up Scavenger summon.")
+                end
                 summonState = 5
                 summonTimer = 0
                 summonRetryCount = 0
+            elseif summonTimer >= delay then
+                summonState = 5
+                summonTimer = 0
+                summonRetryCount = 0
+            else
+                ShowAlert(string.format("Merchant interaction detected. Waiting %ds for Scavenger...", delay - math.floor(summonTimer)), false, true)
             end
         elseif summonState == 5 then -- Summon Greedy Scavenger
             lastPetName = "Greedy Scavenger"
@@ -825,7 +856,7 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         end
     elseif event == "MERCHANT_SHOW" then
         -- Handle summoning state transition
-        if summonState == 3 then
+        if summonState > 0 and summonState < 4 then
             local name = GetUnitName("target")
             local matchName = currentMerchantName or "Goblin Merchant"
             if name and name:lower():find(matchName:lower(), 1, true) then
