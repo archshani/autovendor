@@ -167,6 +167,8 @@ local summonTimer = 0
 local fullBagTimer = 0
 local wasFull = false
 local pendingTargetShow = false
+local summonRetryCount = 0
+local lastPetName = ""
 
 local function CheckBagSpace()
     local totalFree = 0
@@ -378,6 +380,7 @@ SlashCmdList["AUTOVENDOR"] = function(msg)
     elseif cmd == "test" then
         summonState = 1
         summonTimer = 0
+        summonRetryCount = 0
         frame:SetScript("OnUpdate", frame.AutoVendor_OnUpdate)
         print("|cff00ff00AutoVendor:|r Starting test summon sequence...")
 
@@ -410,6 +413,19 @@ local sellQueue = {}
 local itemsSoldCount = 0
 local totalProfit = 0
 local sellTimer = 0
+
+local function IsPetActive(name)
+    local num = GetNumCompanions("CRITTER")
+    local lowerTarget = name:lower()
+    for i = 1, num do
+        local _, cName = GetCompanionInfo("CRITTER", i)
+        if cName and cName:lower():find(lowerTarget, 1, true) then
+            local _, _, _, _, active = GetCompanionInfo("CRITTER", i)
+            return active
+        end
+    end
+    return false
+end
 
 local function SummonPet(name)
     local num = GetNumCompanions("CRITTER")
@@ -449,6 +465,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
         if fullBagTimer >= 5 then
             summonState = 1
             summonTimer = 0
+            summonRetryCount = 0
             fullBagTimer = 0
         end
     end
@@ -540,23 +557,56 @@ function frame:AutoVendor_OnUpdate(elapsed)
     if summonState > 0 then
         summonTimer = summonTimer + elapsed
         
-        if summonState == 1 then -- Initial delay before summon
-            ShowAlert("Summoning the Goblin Merchnat...", true, true)
+        if summonState == 1 then -- Summoning the Goblin Merchant
+            lastPetName = "Goblin Merchant"
+            ShowAlert("Summoning " .. lastPetName .. "...", true, true)
             if summonTimer >= 1 then
-                local success, exactName = SummonPet("Goblin Merchant")
+                local success = SummonPet(lastPetName)
                 if success then
-                    if AutoVendorSettings.debugMode then
-                        print("|cff00ff00AutoVendor Debug:|r Summoning " .. (exactName or "Goblin Merchant") .. "...")
-                    end
-                    summonState = 2
+                    summonState = 1.1
                     summonTimer = 0
                 else
-                    summonState = 0
-                    CheckBagSpace() -- Reset alerts
+                    summonRetryCount = summonRetryCount + 1
+                    if summonRetryCount <= 3 then
+                        summonState = 1.2
+                        summonTimer = 0
+                    else
+                        print("|cffff0000AutoVendor:|r Failed to find " .. lastPetName .. " in companion list.")
+                        summonState = 0
+                        summonRetryCount = 0
+                        CheckBagSpace()
+                    end
                 end
             end
+        elseif summonState == 1.1 then -- Verify Goblin Active
+            ShowAlert("Verifying " .. lastPetName .. "...", true, true)
+            if IsPetActive(lastPetName) then
+                if AutoVendorSettings.debugMode then
+                    print("|cff00ff00AutoVendor Debug:|r " .. lastPetName .. " is active.")
+                end
+                summonState = 2
+                summonTimer = 0
+                summonRetryCount = 0
+            elseif summonTimer >= 3 then
+                summonRetryCount = summonRetryCount + 1
+                if summonRetryCount <= 3 then
+                    summonState = 1.2
+                    summonTimer = 0
+                else
+                    print("|cffff0000AutoVendor:|r " .. lastPetName .. " did not become active.")
+                    summonState = 0
+                    summonRetryCount = 0
+                    CheckBagSpace()
+                end
+            end
+        elseif summonState == 1.2 then -- Retry delay for Goblin
+            ShowAlert("Summon failed. Retrying " .. lastPetName .. "...", true, true)
+            if summonTimer >= 2 then
+                summonState = 1
+                summonTimer = 0
+            end
         elseif summonState == 2 then -- Delay before targeting
-            ShowAlert("Goblin Merchant Summon.........", true, true)
+            ShowAlert("Goblin Merchant summoned! Preparing...", true, true)
             if summonTimer >= 2 then
                 summonState = 3
                 summonTimer = 0
@@ -567,21 +617,62 @@ function frame:AutoVendor_OnUpdate(elapsed)
             local msg = string.format("Goblin Merchant summoned. Please target and interact now! (Target: '%s', Interact: '%s')", tKey, iKey)
             ShowAlert(msg, false, true)
         elseif summonState == 4 then -- Wait X seconds after interaction
-            local tKey = AutoVendorSettings.targetKey or ""
-            local iKey = AutoVendorSettings.interactKey or ""
-            local msg = string.format("Goblin Merchant summoned. Please target and interact now! (Target: '%s', Interact: '%s')", tKey, iKey)
-            ShowAlert(msg, false, true)
-
             local delay = AutoVendorSettings.scavengerDelay or 5
+            ShowAlert(string.format("Merchant interaction detected. Waiting %ds for Scavenger...", delay - math.floor(summonTimer)), false, true)
+
             if summonTimer >= delay then
-                local success, exactName = SummonPet("Greedy Scavenger")
+                summonState = 5
+                summonTimer = 0
+                summonRetryCount = 0
+            end
+        elseif summonState == 5 then -- Summon Greedy Scavenger
+            lastPetName = "Greedy Scavenger"
+            ShowAlert("Summoning " .. lastPetName .. "...", true, true)
+            if summonTimer >= 1 then
+                local success = SummonPet(lastPetName)
                 if success then
-                    if AutoVendorSettings.debugMode then
-                        print("|cff00ff00AutoVendor Debug:|r Summoning " .. (exactName or "Greedy Scavenger") .. "...")
+                    summonState = 5.1
+                    summonTimer = 0
+                else
+                    summonRetryCount = summonRetryCount + 1
+                    if summonRetryCount <= 3 then
+                        summonState = 5.2
+                        summonTimer = 0
+                    else
+                        print("|cffff0000AutoVendor:|r Failed to find " .. lastPetName .. " in companion list.")
+                        summonState = 0
+                        summonRetryCount = 0
+                        CheckBagSpace()
                     end
                 end
+            end
+        elseif summonState == 5.1 then -- Verify Scavenger Active
+            ShowAlert("Verifying " .. lastPetName .. "...", true, true)
+            if IsPetActive(lastPetName) then
+                if AutoVendorSettings.debugMode then
+                    print("|cff00ff00AutoVendor Debug:|r " .. lastPetName .. " is active.")
+                end
                 summonState = 0
-                CheckBagSpace() -- Reset alerts
+                summonTimer = 0
+                summonRetryCount = 0
+                CheckBagSpace()
+            elseif summonTimer >= 3 then
+                summonRetryCount = summonRetryCount + 1
+                if summonRetryCount <= 3 then
+                    summonState = 5.2
+                    summonTimer = 0
+                else
+                    print("|cffff0000AutoVendor:|r " .. lastPetName .. " did not become active.")
+                    summonState = 0
+                    summonRetryCount = 0
+                    CheckBagSpace()
+                end
+            end
+        elseif summonState == 5.2 then -- Retry delay for Scavenger
+            ShowAlert("Summon failed. Retrying " .. lastPetName .. "...", true, true)
+            if summonTimer >= 2 then
+                summonState = 5
+                summonTimer = 0
             end
         end
     end
