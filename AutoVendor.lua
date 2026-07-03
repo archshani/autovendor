@@ -169,6 +169,8 @@ local wasFull = false
 local pendingTargetShow = false
 local summonRetryCount = 0
 local lastPetName = ""
+local currentMerchantName = "Goblin Merchant"
+local lastCheckTimer = 0
 
 local function CheckBagSpace()
     local totalFree = 0
@@ -417,12 +419,21 @@ local sellTimer = 0
 local function IsPetActive(name)
     local num = GetNumCompanions("CRITTER")
     local lowerTarget = name:lower()
+    if AutoVendorSettings.debugMode then
+        print("|cff00ff00AutoVendor Debug:|r Checking if active: " .. name)
+    end
     for i = 1, num do
         local _, cName = GetCompanionInfo("CRITTER", i)
         if cName and cName:lower():find(lowerTarget, 1, true) then
             local _, _, _, _, active = GetCompanionInfo("CRITTER", i)
+            if AutoVendorSettings.debugMode then
+                print("|cff00ff00AutoVendor Debug:|r Found '" .. cName .. "', active = " .. tostring(active))
+            end
             return active
         end
+    end
+    if AutoVendorSettings.debugMode then
+        print("|cffff0000AutoVendor Debug:|r Pet '" .. name .. "' not found in companion list during active check.")
     end
     return false
 end
@@ -430,22 +441,45 @@ end
 local function SummonPet(name)
     local num = GetNumCompanions("CRITTER")
     local found = false
+    local onCooldown = false
     local lowerTarget = name:lower()
     local exactName = nil
     
+    if AutoVendorSettings.debugMode then
+        print("|cff00ff00AutoVendor Debug:|r Attempting to summon: " .. name)
+    end
+
     for i = 1, num do
         local _, cName = GetCompanionInfo("CRITTER", i)
         if cName and cName:lower():find(lowerTarget, 1, true) then
             exactName = cName
             local _, _, _, _, active = GetCompanionInfo("CRITTER", i)
+            if AutoVendorSettings.debugMode then
+                print("|cff00ff00AutoVendor Debug:|r Found matching pet: '" .. cName .. "' (Active: " .. tostring(active) .. ")")
+            end
             if not active then
-                CallCompanion("CRITTER", i)
+                local startTime, duration, enable = GetCompanionCooldown("CRITTER", i)
+                if duration and duration > 0 and (GetTime() < startTime + duration) then
+                    onCooldown = true
+                    if AutoVendorSettings.debugMode then
+                        print(string.format("|cffff0000AutoVendor Debug:|r Pet '%s' is on cooldown (%ds remaining).", cName, math.floor(startTime + duration - GetTime())))
+                    end
+                else
+                    CallCompanion("CRITTER", i)
+                    if AutoVendorSettings.debugMode then
+                        print("|cff00ff00AutoVendor Debug:|r CallCompanion executed for index " .. i)
+                    end
+                end
             end
             found = true
             break
         end
     end
     
+    if onCooldown then
+        return false, exactName, true
+    end
+
     if not found and AutoVendorSettings.debugMode then
         print("|cffff0000AutoVendor Debug:|r Could not find pet '" .. name .. "'. Available pets:")
         for i = 1, num do
@@ -455,13 +489,16 @@ local function SummonPet(name)
             end
         end
     end
-    return found, exactName
+    return found, exactName, false
 end
 
 function frame:AutoVendor_OnUpdate(elapsed)
     -- 0. Full Bag Timer Logic
     if wasFull and summonState == 0 then
         fullBagTimer = fullBagTimer + elapsed
+        if AutoVendorSettings.debugMode and math.floor(fullBagTimer) > math.floor(fullBagTimer - elapsed) then
+            print(string.format("|cff00ff00AutoVendor Debug:|r Full bag timer: %d/5", math.floor(fullBagTimer)))
+        end
         if fullBagTimer >= 5 then
             summonState = 1
             summonTimer = 0
@@ -555,16 +592,25 @@ function frame:AutoVendor_OnUpdate(elapsed)
 
     -- 2. Summoning Logic
     if summonState > 0 then
+        local oldState = summonState
         summonTimer = summonTimer + elapsed
         
         if summonState == 1 then -- Summoning the Goblin Merchant
             lastPetName = "Goblin Merchant"
             ShowAlert("Summoning " .. lastPetName .. "...", true, true)
             if summonTimer >= 1 then
-                local success = SummonPet(lastPetName)
+                local success, exactName, onCooldown = SummonPet(lastPetName)
                 if success then
+                    if exactName then
+                        currentMerchantName = exactName
+                    end
                     summonState = 1.1
                     summonTimer = 0
+                elseif onCooldown then
+                    print("|cffff0000AutoVendor:|r " .. lastPetName .. " is on cooldown. Aborting.")
+                    summonState = 0
+                    summonRetryCount = 0
+                    CheckBagSpace()
                 else
                     summonRetryCount = summonRetryCount + 1
                     if summonRetryCount <= 3 then
@@ -580,14 +626,21 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 1.1 then -- Verify Goblin Active
             ShowAlert("Verifying " .. lastPetName .. "...", true, true)
-            if IsPetActive(lastPetName) then
-                if AutoVendorSettings.debugMode then
-                    print("|cff00ff00AutoVendor Debug:|r " .. lastPetName .. " is active.")
+            -- Throttle check to every 0.5s
+            if not lastCheckTimer or lastCheckTimer >= 0.5 then
+                if IsPetActive(lastPetName) then
+                    summonState = 2
+                    summonTimer = 0
+                    summonRetryCount = 0
+                    lastCheckTimer = nil
                 end
-                summonState = 2
-                summonTimer = 0
-                summonRetryCount = 0
-            elseif summonTimer >= 3 then
+                lastCheckTimer = 0
+            else
+                lastCheckTimer = lastCheckTimer + elapsed
+            end
+
+            if summonState == 1.1 and summonTimer >= 3 then
+                lastCheckTimer = nil
                 summonRetryCount = summonRetryCount + 1
                 if summonRetryCount <= 3 then
                     summonState = 1.2
@@ -629,10 +682,15 @@ function frame:AutoVendor_OnUpdate(elapsed)
             lastPetName = "Greedy Scavenger"
             ShowAlert("Summoning " .. lastPetName .. "...", true, true)
             if summonTimer >= 1 then
-                local success = SummonPet(lastPetName)
+                local success, _, onCooldown = SummonPet(lastPetName)
                 if success then
                     summonState = 5.1
                     summonTimer = 0
+                elseif onCooldown then
+                    print("|cffff0000AutoVendor:|r " .. lastPetName .. " is on cooldown. Aborting.")
+                    summonState = 0
+                    summonRetryCount = 0
+                    CheckBagSpace()
                 else
                     summonRetryCount = summonRetryCount + 1
                     if summonRetryCount <= 3 then
@@ -648,15 +706,22 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 5.1 then -- Verify Scavenger Active
             ShowAlert("Verifying " .. lastPetName .. "...", true, true)
-            if IsPetActive(lastPetName) then
-                if AutoVendorSettings.debugMode then
-                    print("|cff00ff00AutoVendor Debug:|r " .. lastPetName .. " is active.")
+            -- Throttle check to every 0.5s
+            if not lastCheckTimer or lastCheckTimer >= 0.5 then
+                if IsPetActive(lastPetName) then
+                    summonState = 0
+                    summonTimer = 0
+                    summonRetryCount = 0
+                    lastCheckTimer = nil
+                    CheckBagSpace()
                 end
-                summonState = 0
-                summonTimer = 0
-                summonRetryCount = 0
-                CheckBagSpace()
-            elseif summonTimer >= 3 then
+                lastCheckTimer = 0
+            else
+                lastCheckTimer = lastCheckTimer + elapsed
+            end
+
+            if summonState == 5.1 and summonTimer >= 3 then
+                lastCheckTimer = nil
                 summonRetryCount = summonRetryCount + 1
                 if summonRetryCount <= 3 then
                     summonState = 5.2
@@ -675,10 +740,17 @@ function frame:AutoVendor_OnUpdate(elapsed)
                 summonTimer = 0
             end
         end
+
+        if oldState ~= summonState and AutoVendorSettings.debugMode then
+            print(string.format("|cff00ff00AutoVendor Debug:|r State transition: %s -> %s (Retry: %d)", tostring(oldState), tostring(summonState), summonRetryCount))
+        end
     end
 
     -- 3. Cleanup
     if #sellQueue == 0 and summonState == 0 and not wasFull then
+        if AutoVendorSettings.debugMode then
+            print("|cff00ff00AutoVendor Debug:|r OnUpdate stopped (Queue empty, summonState 0, not full).")
+        end
         self:SetScript("OnUpdate", nil)
         if itemsSoldCount > 0 then
             local msg = string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit))
@@ -746,13 +818,20 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
         if wasFull and not frame:GetScript("OnUpdate") then
+            if AutoVendorSettings.debugMode then
+                print("|cff00ff00AutoVendor Debug:|r Bags full, starting OnUpdate.")
+            end
             frame:SetScript("OnUpdate", frame.AutoVendor_OnUpdate)
         end
     elseif event == "MERCHANT_SHOW" then
         -- Handle summoning state transition
         if summonState == 3 then
             local name = GetUnitName("target")
-            if name and name:lower():find("goblin merchant", 1, true) then
+            local matchName = currentMerchantName or "Goblin Merchant"
+            if name and name:lower():find(matchName:lower(), 1, true) then
+                if AutoVendorSettings.debugMode then
+                    print("|cff00ff00AutoVendor Debug:|r Merchant interaction detected with " .. name)
+                end
                 summonState = 4
                 summonTimer = 0
                 local delay = AutoVendorSettings.scavengerDelay or 5
