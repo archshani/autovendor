@@ -48,6 +48,7 @@ local function UpdateTargetBind()
     if AutoVendorSettings.interactKey and AutoVendorSettings.interactKey ~= "" then
         SetOverrideBinding(frame, true, AutoVendorSettings.interactKey, "INTERACTTARGET")
     end
+    UpdateTargetMacro()
 end
 
 local function VersionToNumber(v)
@@ -62,6 +63,29 @@ local function VersionToNumber(v)
 end
 
 local lastNotifiedVersion = VERSION
+
+-- Forward declarations
+local targetBtn
+
+local function UpdateTargetMacro()
+    if InCombatLockdown() then
+        frame.pendingMacroUpdate = true
+        return
+    end
+    local name = currentMerchantName or "Goblin Merchant"
+    local macro = "/cleartarget\n/targetexact " .. name
+    if targetBtn then
+        targetBtn:SetAttribute("macrotext", macro)
+    end
+    if _G.AV_InteractBtn then
+        _G.AV_InteractBtn:SetAttribute("macrotext", macro)
+    end
+    frame.pendingMacroUpdate = false
+    if AutoVendorSettings.debugMode then
+        print("|cff00ff00AutoVendor Debug:|r Targeting macro updated to: " .. name)
+    end
+end
+
 local function CheckVersion(newVer)
     if VersionToNumber(newVer) > VersionToNumber(lastNotifiedVersion) then
         print("|cff00ff00AutoVendor:|r A newer version (" .. newVer .. ") is available! Download it at: " .. GITHUB_URL)
@@ -126,7 +150,7 @@ alertFrame.text:SetTextColor(1, 0, 0) -- Red
 alertFrame:Hide()
 
 -- 3.1 Target Alert Frame (Secure)
-local targetBtn = CreateFrame("Button", "AV_TargetBtn", UIParent, "SecureActionButtonTemplate, UIPanelButtonTemplate")
+targetBtn = CreateFrame("Button", "AV_TargetBtn", UIParent, "SecureActionButtonTemplate, UIPanelButtonTemplate")
 targetBtn:SetSize(200, 50)
 targetBtn:SetPoint("CENTER", 0, 50)
 targetBtn:SetText("Target Goblin Merchant")
@@ -622,6 +646,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                 if success then
                     if exactName then
                         currentMerchantName = exactName
+                        UpdateTargetMacro()
                     end
                     summonState = 1.1
                     summonTimer = 0
@@ -846,6 +871,9 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
     elseif event == "PLAYER_REGEN_ENABLED" then
         UpdateTargetBind()
         pendingTargetShow = false
+        if self.pendingMacroUpdate then
+            UpdateTargetMacro()
+        end
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
         if wasFull and not frame:GetScript("OnUpdate") then
