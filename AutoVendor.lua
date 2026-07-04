@@ -6,6 +6,20 @@ local frame = CreateFrame("Frame")
 -- 1. Startup Message (If you see this, the addon is loaded!)
 print("|cff00ff00AutoVendor (WotLK) Loaded Successfully.|r")
 
+-- 1.1 Local Variables & Forward Declarations
+local summonState = 0
+local summonTimer = 0
+local fullBagTimer = 0
+local wasFull = false
+local pendingTargetShow = false
+local summonRetryCount = 0
+local lastPetName = ""
+local currentMerchantName = "Goblin Merchant"
+local lastCheckTimer = 0
+local targetBtn
+
+local UpdateTargetMacro -- Forward declaration
+
 -- 2. Settings Initialization
 local VERSION = GetAddOnMetadata("AutoVendor", "Version") or "1.2"
 local GITHUB_URL = "https://github.com/User/AutoVendor"
@@ -43,10 +57,16 @@ local function UpdateTargetBind()
     if InCombatLockdown() then return end
     ClearOverrideBindings(frame)
     if AutoVendorSettings.targetKey and AutoVendorSettings.targetKey ~= "" then
-        SetBindingClick(AutoVendorSettings.targetKey, "AV_TargetBtn")
+        SetOverrideBindingClick(frame, true, AutoVendorSettings.targetKey, "AV_TargetBtn")
+        if AutoVendorSettings.debugMode then
+            print("|cff00ff00AutoVendor Debug:|r Targeting key bound: " .. AutoVendorSettings.targetKey)
+        end
     end
     if AutoVendorSettings.interactKey and AutoVendorSettings.interactKey ~= "" then
         SetOverrideBinding(frame, true, AutoVendorSettings.interactKey, "INTERACTTARGET")
+        if AutoVendorSettings.debugMode then
+            print("|cff00ff00AutoVendor Debug:|r Interact key bound: " .. AutoVendorSettings.interactKey)
+        end
     end
     UpdateTargetMacro()
 end
@@ -64,16 +84,33 @@ end
 
 local lastNotifiedVersion = VERSION
 
--- Forward declarations
-local targetBtn
+-- 2.1 Target Button creation (needs to be early for bindings)
+targetBtn = CreateFrame("Button", "AV_TargetBtn", UIParent, "SecureActionButtonTemplate, UIPanelButtonTemplate")
+targetBtn:SetSize(200, 50)
+targetBtn:SetPoint("CENTER", 0, 50)
+targetBtn:SetText("Target Goblin Merchant")
+targetBtn:SetAttribute("type", "macro")
+targetBtn:SetAttribute("macrotext", "/cleartarget\n/targetexact Goblin Merchant")
+targetBtn:Hide()
 
-local function UpdateTargetMacro()
+-- PostClick doesn't interfere with the secure action
+targetBtn:SetScript("PostClick", function(self)
+    if AutoVendorSettings.debugMode then
+        print("|cff00ff00AutoVendor Debug:|r Targeting button clicked.")
+    end
+    if not InCombatLockdown() then
+        self:Hide()
+    end
+end)
+
+function UpdateTargetMacro()
     if InCombatLockdown() then
         frame.pendingMacroUpdate = true
         return
     end
     local name = currentMerchantName or "Goblin Merchant"
-    local macro = "/cleartarget\n/targetexact " .. name
+    -- Use both targetexact and target for robustness
+    local macro = string.format("/cleartarget\n/targetexact %s\n/target %s", name, name)
     if targetBtn then
         targetBtn:SetAttribute("macrotext", macro)
     end
@@ -150,23 +187,6 @@ alertFrame.text:SetTextColor(1, 0, 0) -- Red
 alertFrame:Hide()
 
 -- 3.1 Target Alert Frame (Secure)
-targetBtn = CreateFrame("Button", "AV_TargetBtn", UIParent, "SecureActionButtonTemplate, UIPanelButtonTemplate")
-targetBtn:SetSize(200, 50)
-targetBtn:SetPoint("CENTER", 0, 50)
-targetBtn:SetText("Target Goblin Merchant")
-targetBtn:SetAttribute("type", "macro")
-targetBtn:SetAttribute("macrotext", "/cleartarget\n/targetexact Goblin Merchant")
-targetBtn:Hide()
-
--- PostClick doesn't interfere with the secure action
-targetBtn:SetScript("PostClick", function(self)
-    if AutoVendorSettings.debugMode then
-        print("|cff00ff00AutoVendor Debug:|r Targeting button clicked.")
-    end
-    if not InCombatLockdown() then
-        self:Hide()
-    end
-end)
 
 local function ShowAlert(text, isFull, force)
     if not AutoVendorSettings.showBagWarning and not force then 
@@ -185,16 +205,6 @@ local function ShowAlert(text, isFull, force)
     alertFrame:SetAlpha(1)
     alertFrame:Show()
 end
-
-local summonState = 0
-local summonTimer = 0
-local fullBagTimer = 0
-local wasFull = false
-local pendingTargetShow = false
-local summonRetryCount = 0
-local lastPetName = ""
-local currentMerchantName = "Goblin Merchant"
-local lastCheckTimer = 0
 
 local function CheckBagSpace()
     local totalFree = 0
