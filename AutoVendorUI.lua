@@ -364,6 +364,19 @@ function(p)
     testBtn:SetPoint("TOPLEFT", c.debugMode, "BOTTOMLEFT", 10, -5)
     testBtn:SetText("Test Sequence")
     testBtn:SetScript("OnClick", function() SlashCmdList["AUTOVENDOR"]("test") end)
+
+    local resetBindsBtn = CreateFrame("Button", nil, c, "UIPanelButtonTemplate")
+    resetBindsBtn:SetSize(120, 22)
+    resetBindsBtn:SetPoint("TOPLEFT", testBtn, "TOPRIGHT", 10, 0)
+    resetBindsBtn:SetText("Reset Binds")
+    resetBindsBtn:SetScript("OnClick", function()
+        AutoVendorSettings.targetKey = "G"
+        AutoVendorSettings.interactKey = "F"
+        if _G.AutoVendor_UpdateTargetBind then
+            _G.AutoVendor_UpdateTargetBind(true) -- Force update and save
+        end
+        UI:SetTab(1)
+    end)
 end,
 function(p)
     -- Refresh
