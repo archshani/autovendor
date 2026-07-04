@@ -359,9 +359,23 @@ function(p)
 
     c.debugMode = CreateCheckButton("AV_DebugMode", "Debug Mode", interactBtn, -10, -5, "debugMode")
 
+    local resetBindsBtn = CreateFrame("Button", nil, c, "UIPanelButtonTemplate")
+    resetBindsBtn:SetSize(120, 22)
+    resetBindsBtn:SetPoint("TOPLEFT", c.debugMode, "BOTTOMLEFT", 10, -10)
+    resetBindsBtn:SetText("Reset Binds")
+    resetBindsBtn:SetScript("OnClick", function()
+        AutoVendorSettings.targetKey = "G"
+        AutoVendorSettings.interactKey = "F"
+        if _G.AutoVendor_UpdateTargetBind then
+            _G.AutoVendor_UpdateTargetBind()
+        end
+        UI:SetTab(1)
+        print("|cff00ff00AutoVendor:|r Default keybinds restored.")
+    end)
+
     local testBtn = CreateFrame("Button", nil, c, "UIPanelButtonTemplate")
     testBtn:SetSize(120, 22)
-    testBtn:SetPoint("TOPLEFT", c.debugMode, "BOTTOMLEFT", 10, -5)
+    testBtn:SetPoint("TOPLEFT", resetBindsBtn, "BOTTOMLEFT", 0, -5)
     testBtn:SetText("Test Sequence")
     testBtn:SetScript("OnClick", function() SlashCmdList["AUTOVENDOR"]("test") end)
 end,
