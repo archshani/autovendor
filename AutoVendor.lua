@@ -1,7 +1,10 @@
 -- AUTOVENDOR FOR WOTLK 3.3.5a
 -- This version uses the classic API functions.
 
-local frame = CreateFrame("Frame")
+local frame = CreateFrame("Frame", "AutoVendorFrame", UIParent)
+frame:SetSize(1, 1)
+frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, -10)
+frame:Show()
 
 -- 1. Startup Message (If you see this, the addon is loaded!)
 print("|cff00ff00AutoVendor (WotLK) Loaded Successfully.|r")
@@ -53,22 +56,44 @@ local defaults = {
     }
 }
 
-local function UpdateTargetBind()
-    if InCombatLockdown() then return end
-    ClearOverrideBindings(frame)
-    if AutoVendorSettings.targetKey and AutoVendorSettings.targetKey ~= "" then
-        SetOverrideBindingClick(frame, true, AutoVendorSettings.targetKey, "AV_TargetBtn")
-        if AutoVendorSettings.debugMode then
-            print("|cff00ff00AutoVendor Debug:|r Targeting key bound: " .. AutoVendorSettings.targetKey)
+local function UpdateTargetBind(force)
+    if InCombatLockdown() then
+        frame.pendingBindUpdate = true
+        return
+    end
+
+    local tKey = AutoVendorSettings.targetKey
+    local iKey = AutoVendorSettings.interactKey
+
+    -- Use SetBindingClick/SetBinding for global effectiveness
+    -- but only if they aren't already set or if forced (from UI)
+    if tKey and tKey ~= "" then
+        local current = GetBindingAction(tKey)
+        if force or not current or current == "" or current == "CLICK AV_TargetBtn:LeftButton" then
+            SetBindingClick(tKey, "AV_TargetBtn")
+            if AutoVendorSettings.debugMode then
+                print("|cff00ff00AutoVendor Debug:|r Targeting key '" .. tKey .. "' bound globally to AV_TargetBtn.")
+            end
         end
     end
-    if AutoVendorSettings.interactKey and AutoVendorSettings.interactKey ~= "" then
-        SetOverrideBinding(frame, true, AutoVendorSettings.interactKey, "INTERACTTARGET")
-        if AutoVendorSettings.debugMode then
-            print("|cff00ff00AutoVendor Debug:|r Interact key bound: " .. AutoVendorSettings.interactKey)
+
+    if iKey and iKey ~= "" then
+        local current = GetBindingAction(iKey)
+        if force or not current or current == "" or current == "INTERACTTARGET" then
+            SetBinding(iKey, "INTERACTTARGET")
+            if AutoVendorSettings.debugMode then
+                print("|cff00ff00AutoVendor Debug:|r Interact key '" .. iKey .. "' bound globally to INTERACTTARGET.")
+            end
         end
     end
+
+    if force then
+        SaveBindings(GetCurrentBindingSet())
+        print("|cff00ff00AutoVendor:|r Hotkeys applied and saved.")
+    end
+
     UpdateTargetMacro()
+    frame.pendingBindUpdate = false
 end
 
 local function VersionToNumber(v)
@@ -85,9 +110,9 @@ end
 local lastNotifiedVersion = VERSION
 
 -- 2.1 Target Button creation (needs to be early for bindings)
-targetBtn = CreateFrame("Button", "AV_TargetBtn", UIParent, "SecureActionButtonTemplate, UIPanelButtonTemplate")
+targetBtn = CreateFrame("Button", "AV_TargetBtn", frame, "SecureActionButtonTemplate, UIPanelButtonTemplate")
 targetBtn:SetSize(200, 50)
-targetBtn:SetPoint("CENTER", 0, 50)
+targetBtn:SetPoint("CENTER", UIParent, "CENTER", 0, 50)
 targetBtn:SetText("Target Goblin Merchant")
 targetBtn:SetAttribute("type", "macro")
 targetBtn:SetAttribute("macrotext", "/cleartarget\n/targetexact Goblin Merchant")
@@ -109,8 +134,18 @@ function UpdateTargetMacro()
         return
     end
     local name = currentMerchantName or "Goblin Merchant"
-    -- Use both targetexact and target for robustness
-    local macro = string.format("/cleartarget\n/targetexact %s\n/target %s", name, name)
+    -- Use both targetexact and target for robustness.
+    -- We want to be very specific to avoid targeting other things.
+    local macro = "/cleartarget"
+    macro = macro .. "\n/targetexact " .. name
+    if name ~= "Goblin Merchant" then
+        macro = macro .. "\n/targetexact Goblin Merchant"
+    end
+
+    if AutoVendorSettings.debugMode then
+        macro = macro .. "\n/run if GetUnitName('target') then print('|cff00ff00AutoVendor Debug:|r Targeted: '..GetUnitName('target')) else print('|cffff0000AutoVendor Debug:|r Failed to target: '.. (currentMerchantName or 'Goblin Merchant')) end"
+    end
+
     if targetBtn then
         targetBtn:SetAttribute("macrotext", macro)
     end
@@ -119,7 +154,7 @@ function UpdateTargetMacro()
     end
     frame.pendingMacroUpdate = false
     if AutoVendorSettings.debugMode then
-        print("|cff00ff00AutoVendor Debug:|r Targeting macro updated to: " .. name)
+        print("|cff00ff00AutoVendor Debug:|r Targeting macro updated for: " .. name)
     end
 end
 
@@ -151,7 +186,7 @@ local function InitializeSettings()
 
     -- Load defaults if missing
     for k, v in pairs(defaults) do
-        if AutoVendorSettings[k] == nil then
+        if AutoVendorSettings[k] == nil or (type(v) == "string" and AutoVendorSettings[k] == "") then
             if type(v) == "table" then
                 AutoVendorSettings[k] = {}
                 for k2, v2 in pairs(v) do
@@ -479,17 +514,19 @@ local function SummonPet(name)
     local lowerTarget = name:lower()
     local exactName = nil
     
+    -- Known Spell IDs for these pets in WotLK
+    local targetSpellID = (name:find("Goblin", 1, true) and 67504) or (name:find("Scavenger", 1, true) and 67505)
+
     if AutoVendorSettings.debugMode then
-        print("|cff00ff00AutoVendor Debug:|r Attempting to summon: " .. name)
+        print(string.format("|cff00ff00AutoVendor Debug:|r Attempting to summon: %s (SpellID: %s)", name, tostring(targetSpellID)))
     end
 
     for i = 1, num do
-        local _, cName = GetCompanionInfo("CRITTER", i)
-        if cName and cName:lower():find(lowerTarget, 1, true) then
+        local _, cName, spellID, _, active = GetCompanionInfo("CRITTER", i)
+        if (cName and cName:lower():find(lowerTarget, 1, true)) or (targetSpellID and spellID == targetSpellID) then
             exactName = cName
-            local _, _, _, _, active = GetCompanionInfo("CRITTER", i)
             if AutoVendorSettings.debugMode then
-                print("|cff00ff00AutoVendor Debug:|r Found matching pet: '" .. cName .. "' (Active: " .. tostring(active) .. ")")
+                print("|cff00ff00AutoVendor Debug:|r Found matching pet: '" .. cName .. "' (SpellID: " .. tostring(spellID) .. ", Active: " .. tostring(active) .. ")")
             end
             if not active then
                 local startTime, duration, enable = GetCompanionCooldown("CRITTER", i)
@@ -664,6 +701,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                     print("|cffff0000AutoVendor:|r " .. lastPetName .. " is on cooldown. Aborting.")
                     summonState = 0
                     summonRetryCount = 0
+                    if not InCombatLockdown() then targetBtn:Hide() end
                     CheckBagSpace()
                 else
                     summonRetryCount = summonRetryCount + 1
@@ -674,6 +712,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                         print("|cffff0000AutoVendor:|r Failed to find " .. lastPetName .. " in companion list.")
                         summonState = 0
                         summonRetryCount = 0
+                        if not InCombatLockdown() then targetBtn:Hide() end
                         CheckBagSpace()
                     end
                 end
@@ -703,6 +742,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                     print("|cffff0000AutoVendor:|r " .. lastPetName .. " did not become active.")
                     summonState = 0
                     summonRetryCount = 0
+                    if not InCombatLockdown() then targetBtn:Hide() end
                     CheckBagSpace()
                 end
             end
@@ -714,6 +754,9 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 2 then -- Delay before targeting
             ShowAlert("Goblin Merchant summoned! Preparing...", true, true)
+            if not InCombatLockdown() then
+                targetBtn:Show()
+            end
             if summonTimer >= 2 then
                 summonState = 3
                 summonTimer = 0
@@ -756,6 +799,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                     print("|cffff0000AutoVendor:|r " .. lastPetName .. " is on cooldown. Aborting.")
                     summonState = 0
                     summonRetryCount = 0
+                    if not InCombatLockdown() then targetBtn:Hide() end
                     CheckBagSpace()
                 else
                     summonRetryCount = summonRetryCount + 1
@@ -766,6 +810,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                         print("|cffff0000AutoVendor:|r Failed to find " .. lastPetName .. " in companion list.")
                         summonState = 0
                         summonRetryCount = 0
+                        if not InCombatLockdown() then targetBtn:Hide() end
                         CheckBagSpace()
                     end
                 end
@@ -779,6 +824,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                     summonTimer = 0
                     summonRetryCount = 0
                     lastCheckTimer = nil
+                    if not InCombatLockdown() then targetBtn:Hide() end
                     CheckBagSpace()
                 end
                 lastCheckTimer = 0
@@ -796,6 +842,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                     print("|cffff0000AutoVendor:|r " .. lastPetName .. " did not become active.")
                     summonState = 0
                     summonRetryCount = 0
+                    if not InCombatLockdown() then targetBtn:Hide() end
                     CheckBagSpace()
                 end
             end
@@ -817,6 +864,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
         if AutoVendorSettings.debugMode then
             print("|cff00ff00AutoVendor Debug:|r OnUpdate stopped (Queue empty, summonState 0, not full).")
         end
+        if not InCombatLockdown() then targetBtn:Hide() end
         self:SetScript("OnUpdate", nil)
         if itemsSoldCount > 0 then
             local msg = string.format("|cff00ff00AutoVendor:|r Sold %d items for %s", itemsSoldCount, FormatMoney(totalProfit))
@@ -879,11 +927,12 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
             CheckVersion(arg2)
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
-        UpdateTargetBind()
-        pendingTargetShow = false
-        if self.pendingMacroUpdate then
+        if self.pendingBindUpdate then
+            UpdateTargetBind()
+        elseif self.pendingMacroUpdate then
             UpdateTargetMacro()
         end
+        pendingTargetShow = false
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
         if wasFull and not frame:GetScript("OnUpdate") then
