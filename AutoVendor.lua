@@ -43,7 +43,7 @@ local function UpdateTargetBind()
     if InCombatLockdown() then return end
     ClearOverrideBindings(frame)
     if AutoVendorSettings.targetKey and AutoVendorSettings.targetKey ~= "" then
-        SetBindingClick(AutoVendorSettings.targetKey, "AV_TargetBtn")
+        SetOverrideBindingClick(frame, true, AutoVendorSettings.targetKey, "AV_TargetBtn")
     end
     if AutoVendorSettings.interactKey and AutoVendorSettings.interactKey ~= "" then
         SetOverrideBinding(frame, true, AutoVendorSettings.interactKey, "INTERACTTARGET")
@@ -114,8 +114,6 @@ local function InitializeSettings()
 end
 
 -- Initial call in case variables are already loaded (e.g. on /reload)
-InitializeSettings()
-
 -- 3. Alert Frame for Big Red Text
 local alertFrame = CreateFrame("Frame", nil, UIParent)
 alertFrame:SetSize(600, 100)
@@ -643,6 +641,7 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
     elseif event == "PLAYER_LOGIN" then
         RegisterAddonMessagePrefix("AutoVendorVer")
         BroadcastVersion()
+        UpdateTargetBind()
     elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
         BroadcastVersion()
     elseif event == "CHAT_MSG_ADDON" then
@@ -737,3 +736,6 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         end
     end
 end)
+
+-- Initial call in case variables are already loaded (e.g. on /reload)
+InitializeSettings()
