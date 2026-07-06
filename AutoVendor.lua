@@ -203,7 +203,7 @@ local function CheckBagSpace()
         end
     end
 
-    -- Summon Logic Trigger (5-second rule)
+    -- Summon Logic Trigger (1-second rule)
     if AutoVendorSettings.autoSummon and totalFree == 0 then
         wasFull = true
     else
@@ -497,9 +497,9 @@ function frame:AutoVendor_OnUpdate(elapsed)
     if wasFull and summonState == 0 then
         fullBagTimer = fullBagTimer + elapsed
         if AutoVendorSettings.debugMode and math.floor(fullBagTimer) > math.floor(fullBagTimer - elapsed) then
-            print(string.format("|cff00ff00AutoVendor Debug:|r Full bag timer: %d/5", math.floor(fullBagTimer)))
+            print(string.format("|cff00ff00AutoVendor Debug:|r Full bag timer: %d/1", math.floor(fullBagTimer)))
         end
-        if fullBagTimer >= 5 then
+        if fullBagTimer >= 1 then
             summonState = 1
             summonTimer = 0
             summonRetryCount = 0
@@ -617,7 +617,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
         if summonState == 1 then -- Summoning the Goblin Merchant
             lastPetName = "Goblin Merchant"
             ShowAlert("Summoning " .. lastPetName .. "...", true, true)
-            if summonTimer >= 1 then
+            if summonTimer >= 0.1 then
                 local success, exactName, onCooldown = SummonPet(lastPetName)
                 if success then
                     if exactName then
@@ -645,8 +645,8 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 1.1 then -- Verify Goblin Active
             ShowAlert("Verifying " .. lastPetName .. "...", true, true)
-            -- Throttle check to every 0.5s
-            if not lastCheckTimer or lastCheckTimer >= 0.5 then
+            -- Throttle check to every 0.1s
+            if not lastCheckTimer or lastCheckTimer >= 0.1 then
                 if IsPetActive(lastPetName) then
                     summonState = 2
                     summonTimer = 0
@@ -673,13 +673,13 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 1.2 then -- Retry delay for Goblin
             ShowAlert("Summon failed. Retrying " .. lastPetName .. "...", true, true)
-            if summonTimer >= 2 then
+            if summonTimer >= 0.5 then
                 summonState = 1
                 summonTimer = 0
             end
         elseif summonState == 2 then -- Delay before targeting
             ShowAlert("Goblin Merchant summoned! Preparing...", true, true)
-            if summonTimer >= 2 then
+            if summonTimer >= 0.1 then
                 summonState = 3
                 summonTimer = 0
             end
@@ -691,9 +691,9 @@ function frame:AutoVendor_OnUpdate(elapsed)
         elseif summonState == 4 then -- Wait X seconds after interaction
             local delay = AutoVendorSettings.scavengerDelay or 5
             
-            -- If selling is done (empty queue) and we've waited at least 1s, we can speed up.
+            -- If selling is done (empty queue) and we've waited at least 0.1s, we can speed up.
             -- This handles the case where interaction was fast and selling finished quickly.
-            local canSpeedUp = (#sellQueue == 0 and summonTimer >= 1)
+            local canSpeedUp = (#sellQueue == 0 and summonTimer >= 0.1)
             
             if canSpeedUp then
                 if AutoVendorSettings.debugMode then
@@ -712,7 +712,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
         elseif summonState == 5 then -- Summon Greedy Scavenger
             lastPetName = "Greedy Scavenger"
             ShowAlert("Summoning " .. lastPetName .. "...", true, true)
-            if summonTimer >= 1 then
+            if summonTimer >= 0.1 then
                 local success, _, onCooldown = SummonPet(lastPetName)
                 if success then
                     summonState = 5.1
@@ -737,8 +737,8 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 5.1 then -- Verify Scavenger Active
             ShowAlert("Verifying " .. lastPetName .. "...", true, true)
-            -- Throttle check to every 0.5s
-            if not lastCheckTimer or lastCheckTimer >= 0.5 then
+            -- Throttle check to every 0.1s
+            if not lastCheckTimer or lastCheckTimer >= 0.1 then
                 if IsPetActive(lastPetName) then
                     summonState = 0
                     summonTimer = 0
@@ -766,7 +766,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 5.2 then -- Retry delay for Scavenger
             ShowAlert("Summon failed. Retrying " .. lastPetName .. "...", true, true)
-            if summonTimer >= 2 then
+            if summonTimer >= 0.5 then
                 summonState = 5
                 summonTimer = 0
             end
