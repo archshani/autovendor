@@ -43,7 +43,7 @@ local function UpdateTargetBind()
     if InCombatLockdown() then return end
     ClearOverrideBindings(frame)
     if AutoVendorSettings.targetKey and AutoVendorSettings.targetKey ~= "" then
-        SetBindingClick(AutoVendorSettings.targetKey, "AV_TargetBtn")
+        SetOverrideBindingClick(frame, true, AutoVendorSettings.targetKey, "AV_TargetBtn")
     end
     if AutoVendorSettings.interactKey and AutoVendorSettings.interactKey ~= "" then
         SetOverrideBinding(frame, true, AutoVendorSettings.interactKey, "INTERACTTARGET")
@@ -835,7 +835,6 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         InitializeSettings()
         _G.AutoVendor_UpdateTargetBind = UpdateTargetBind
     elseif event == "PLAYER_LOGIN" then
-        RegisterAddonMessagePrefix("AutoVendorVer")
         BroadcastVersion()
     elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
         BroadcastVersion()
