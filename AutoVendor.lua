@@ -171,6 +171,28 @@ local summonRetryCount = 0
 local lastPetName = ""
 local currentMerchantName = "Goblin Merchant"
 local lastCheckTimer = 0
+local pendingMacroUpdate = false
+
+local function UpdateTargetMacro()
+    if InCombatLockdown() then
+        pendingMacroUpdate = true
+        return
+    end
+
+    local name = currentMerchantName or "Goblin Merchant"
+    local macro = "/cleartarget\n/targetexact " .. name
+
+    if AV_TargetBtn then
+        AV_TargetBtn:SetAttribute("macrotext", macro)
+    end
+
+    -- AV_InteractBtn is created in UI, but we can access it by name if it's created.
+    if _G["AV_InteractBtn"] then
+        _G["AV_InteractBtn"]:SetAttribute("macrotext", macro)
+    end
+
+    pendingMacroUpdate = false
+end
 
 local function CheckBagSpace()
     local totalFree = 0
@@ -622,6 +644,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                 if success then
                     if exactName then
                         currentMerchantName = exactName
+                        UpdateTargetMacro()
                     end
                     summonState = 1.1
                     summonTimer = 0
@@ -679,6 +702,9 @@ function frame:AutoVendor_OnUpdate(elapsed)
             end
         elseif summonState == 2 then -- Delay before targeting
             ShowAlert("Goblin Merchant summoned! Preparing...", true, true)
+            if not InCombatLockdown() then
+                targetBtn:Show()
+            end
             if summonTimer >= 0.1 then
                 summonState = 3
                 summonTimer = 0
@@ -691,23 +717,34 @@ function frame:AutoVendor_OnUpdate(elapsed)
         elseif summonState == 4 then -- Wait X seconds after interaction
             local delay = AutoVendorSettings.scavengerDelay or 5
             
-            -- If selling is done (empty queue) and we've waited at least 0.1s, we can speed up.
+            -- If selling is done (empty queue) and we've waited at least 0.5s, we can speed up.
             -- This handles the case where interaction was fast and selling finished quickly.
-            local canSpeedUp = (#sellQueue == 0 and summonTimer >= 0.1)
+            -- We MUST wait for the queue to be empty before summoning Scavenger.
+            local canSpeedUp = (#sellQueue == 0 and summonTimer >= 0.5)
             
-            if canSpeedUp then
+            -- Absolute timeout to prevent getting stuck if selling is blocked for some reason
+            -- but we prioritize waiting for the queue.
+            local isTimeout = (summonTimer >= delay and #sellQueue == 0) or (summonTimer >= delay + 10)
+
+            if canSpeedUp or isTimeout then
                 if AutoVendorSettings.debugMode then
-                    print("|cff00ff00AutoVendor Debug:|r Selling finished, speeding up Scavenger summon.")
+                    if canSpeedUp then
+                        print("|cff00ff00AutoVendor Debug:|r Selling finished, speeding up Scavenger summon.")
+                    else
+                        print("|cff00ff00AutoVendor Debug:|r Scavenger delay timeout reached.")
+                    end
                 end
                 summonState = 5
                 summonTimer = 0
                 summonRetryCount = 0
-            elseif summonTimer >= delay then
-                summonState = 5
-                summonTimer = 0
-                summonRetryCount = 0
             else
-                ShowAlert(string.format("Merchant interaction detected. Waiting %ds for Scavenger...", delay - math.floor(summonTimer)), false, true)
+                local status = ""
+                if #sellQueue > 0 then
+                    status = string.format("\nSelling items... (%d remaining)", #sellQueue)
+                else
+                    status = string.format("\nWaiting %ds for Scavenger...", math.max(0, delay - math.floor(summonTimer)))
+                end
+                ShowAlert("Merchant interaction detected." .. status, false, true)
             end
         elseif summonState == 5 then -- Summon Greedy Scavenger
             lastPetName = "Greedy Scavenger"
@@ -845,6 +882,9 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
         UpdateTargetBind()
+        if pendingMacroUpdate then
+            UpdateTargetMacro()
+        end
         pendingTargetShow = false
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
