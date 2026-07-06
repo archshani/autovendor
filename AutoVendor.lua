@@ -39,6 +39,33 @@ local defaults = {
     }
 }
 
+local summonState = 0
+local summonTimer = 0
+local fullBagTimer = 0
+local wasFull = false
+local pendingTargetShow = false
+local summonRetryCount = 0
+local lastPetName = ""
+local currentMerchantName = "Goblin Merchant"
+local lastCheckTimer = 0
+local pendingMacroUpdate = false
+
+local function UpdateTargetMacro()
+    if InCombatLockdown() then
+        pendingMacroUpdate = true
+        return
+    end
+    local name = currentMerchantName or "Goblin Merchant"
+    local macrotext = "/cleartarget\n/targetexact " .. name
+    if AV_TargetBtn then
+        AV_TargetBtn:SetAttribute("macrotext", macrotext)
+    end
+    if AV_InteractBtn then
+        AV_InteractBtn:SetAttribute("macrotext", macrotext)
+    end
+    pendingMacroUpdate = false
+end
+
 local function UpdateTargetBind()
     if InCombatLockdown() then return end
     ClearOverrideBindings(frame)
@@ -111,10 +138,8 @@ local function InitializeSettings()
     end
 
     UpdateTargetBind()
+    UpdateTargetMacro()
 end
-
--- Initial call in case variables are already loaded (e.g. on /reload)
-InitializeSettings()
 
 -- 3. Alert Frame for Big Red Text
 local alertFrame = CreateFrame("Frame", nil, UIParent)
@@ -161,16 +186,6 @@ local function ShowAlert(text, isFull, force)
     alertFrame:SetAlpha(1)
     alertFrame:Show()
 end
-
-local summonState = 0
-local summonTimer = 0
-local fullBagTimer = 0
-local wasFull = false
-local pendingTargetShow = false
-local summonRetryCount = 0
-local lastPetName = ""
-local currentMerchantName = "Goblin Merchant"
-local lastCheckTimer = 0
 
 local function CheckBagSpace()
     local totalFree = 0
@@ -622,6 +637,7 @@ function frame:AutoVendor_OnUpdate(elapsed)
                 if success then
                     if exactName then
                         currentMerchantName = exactName
+                        UpdateTargetMacro()
                     end
                     summonState = 1.1
                     summonTimer = 0
@@ -835,6 +851,7 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         InitializeSettings()
         _G.AutoVendor_UpdateTargetBind = UpdateTargetBind
     elseif event == "PLAYER_LOGIN" then
+        UpdateTargetBind()
         BroadcastVersion()
     elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
         BroadcastVersion()
@@ -844,6 +861,9 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
         UpdateTargetBind()
+        if pendingMacroUpdate then
+            UpdateTargetMacro()
+        end
         pendingTargetShow = false
     elseif event == "BAG_UPDATE" then
         CheckBagSpace()
@@ -937,3 +957,6 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         end
     end
 end)
+
+-- Initial call in case variables are already loaded (e.g. on /reload)
+InitializeSettings()
