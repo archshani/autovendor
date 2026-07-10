@@ -958,5 +958,23 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
     end
 end)
 
+-- 8. Tooltip Hook to show blacklist status
+local function OnTooltipSetItem(self)
+    local _, link = self:GetItem()
+    if link then
+        local itemID = GetIDFromLink(link)
+        if itemID and AutoVendorSettings and AutoVendorSettings.exceptions and AutoVendorSettings.exceptions[itemID] then
+            self:AddLine("Blacklisted for sale", 1, 0, 0)
+        end
+    end
+end
+
+if GameTooltip then
+    GameTooltip:HookScript("OnTooltipSetItem", OnTooltipSetItem)
+end
+if ItemRefTooltip then
+    ItemRefTooltip:HookScript("OnTooltipSetItem", OnTooltipSetItem)
+end
+
 -- Initial call in case variables are already loaded (e.g. on /reload)
 InitializeSettings()
