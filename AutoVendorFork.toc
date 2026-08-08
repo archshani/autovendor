@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: AutoVendor Fork
+## Notes: Automatically sells whitelisted items.
+## Author: User
+## Version: 1.2
+## SavedVariables: AutoVendorSettingsFork
+
+AutoVendorFork.lua
+AutoVendorForkUI.lua
